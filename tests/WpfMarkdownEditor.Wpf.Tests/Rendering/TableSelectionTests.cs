@@ -68,6 +68,50 @@ public sealed class TableSelectionTests
     }
 
     [Fact]
+    public void RepeatedRangeUpdates_ShrinkAndExpandWithoutStaleSelections()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var (_, controller) = RenderTable("| A | B |\n| --- | --- |\n| 1 | 2 |");
+            var cells = controller.Cells;
+
+            controller.SelectCells(0, 3);
+            controller.SelectCells(0, 1);
+
+            Assert.False(cells[0].Editor.Selection.IsEmpty);
+            Assert.False(cells[1].Editor.Selection.IsEmpty);
+            Assert.True(cells[2].Editor.Selection.IsEmpty);
+            Assert.True(cells[3].Editor.Selection.IsEmpty);
+            Assert.Equal($"A\tB", controller.GetSelectionText());
+
+            controller.SelectCells(2, 3);
+            Assert.True(cells[0].Editor.Selection.IsEmpty);
+            Assert.True(cells[1].Editor.Selection.IsEmpty);
+            Assert.False(cells[2].Editor.Selection.IsEmpty);
+            Assert.False(cells[3].Editor.Selection.IsEmpty);
+            Assert.Equal($"1\t2", controller.GetSelectionText());
+        });
+    }
+
+    [Fact]
+    public void RepeatedSameRange_DoesNotReapplySelection()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var (_, controller) = RenderTable("| A | B |\n| --- | --- |\n| 1 | 2 |");
+            var changes = 0;
+            foreach (var cell in controller.Cells)
+                cell.Editor.SelectionChanged += (_, _) => changes++;
+
+            controller.SelectCells(0, 3);
+            changes = 0;
+            controller.SelectCells(0, 3);
+
+            Assert.Equal(0, changes);
+        });
+    }
+
+    [Fact]
     public void ClearSelection_ResetsEveryCellAndText()
     {
         WpfTestHost.Run(() =>

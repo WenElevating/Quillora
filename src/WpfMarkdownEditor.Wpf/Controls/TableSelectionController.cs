@@ -4,7 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
-using WpfMarkdownEditor.Wpf.Rendering;
+using System.Windows.Threading;
 
 namespace WpfMarkdownEditor.Wpf.Controls;
 
@@ -16,11 +16,19 @@ namespace WpfMarkdownEditor.Wpf.Controls;
 internal sealed class TableSelectionController : IDisposable
 {
     private static readonly object CopySelectionItemTag = new();
+    private static readonly TimeSpan SelectionUpdateInterval = TimeSpan.FromMilliseconds(16);
     private static WeakReference<TableSelectionController>? _activeController;
 
     private readonly Border _tableRoot;
     private readonly List<TableCellView> _cells;
     private readonly List<TableCellView> _selectedCells = [];
+    private readonly Dictionary<RichTextBox, TableCellView> _cellByEditor = [];
+    private readonly Dictionary<Border, TableCellView> _cellByContainer = [];
+    private readonly Dictionary<TableCellView, AppliedRange> _appliedRanges = [];
+    // Mouse moves only record the newest point; selection writes run at most once
+    // per UI frame. Reapplying a RichTextBox selection for every mouse event is
+    // the main source of drag lag on larger tables.
+    private readonly DispatcherTimer _selectionTimer;
 
     private TableCellView? _anchorCell;
     private TextPointer? _anchorPosition;
@@ -29,15 +37,34 @@ internal sealed class TableSelectionController : IDisposable
 
     private TableCellView? _dragCandidateCell;
     private Point _dragOrigin;
+    private Point _pendingPoint;
+    private bool _hasPendingPoint;
+    private TableCellView? _lastHitCell;
+    private Rect _lastHitCellBounds;
     private bool _dragging;
     private bool _mouseCaptured;
     private bool _disposed;
+
+    private readonly record struct AppliedRange(int StartOffset, int EndOffset, bool WholeCell);
 
     public TableSelectionController(Border tableRoot, IReadOnlyList<TableCellView> cells)
     {
         _tableRoot = tableRoot;
         _cells = cells.OrderBy(static cell => cell.Row).ThenBy(static cell => cell.Column).ToList();
         _tableRoot.Tag = this;
+
+        foreach (var cell in _cells)
+        {
+            _cellByEditor[cell.Editor] = cell;
+            if (VisualTreeHelper.GetParent(cell.Editor) is Border container)
+                _cellByContainer[container] = cell;
+        }
+
+        _selectionTimer = new DispatcherTimer(DispatcherPriority.Input, tableRoot.Dispatcher)
+        {
+            Interval = SelectionUpdateInterval,
+        };
+        _selectionTimer.Tick += OnSelectionTimerTick;
 
         _tableRoot.AddHandler(
             UIElement.PreviewMouseLeftButtonDownEvent,
@@ -159,6 +186,11 @@ internal sealed class TableSelectionController : IDisposable
 
     internal void ClearSelection()
     {
+        _selectionTimer.Stop();
+        _hasPendingPoint = false;
+        _appliedRanges.Clear();
+        _lastHitCell = null;
+
         foreach (var cell in _cells)
             ClearCellSelection(cell);
 
@@ -183,6 +215,8 @@ internal sealed class TableSelectionController : IDisposable
             return;
 
         _disposed = true;
+        _selectionTimer.Stop();
+        _selectionTimer.Tick -= OnSelectionTimerTick;
         ClearSelection();
         _tableRoot.RemoveHandler(UIElement.PreviewMouseLeftButtonDownEvent, new MouseButtonEventHandler(OnPreviewMouseLeftButtonDown));
         _tableRoot.RemoveHandler(Mouse.PreviewMouseMoveEvent, new MouseEventHandler(OnPreviewMouseMove));
@@ -193,7 +227,10 @@ internal sealed class TableSelectionController : IDisposable
         _tableRoot.Unloaded -= OnUnloaded;
 
         foreach (var cell in _cells)
+        {
             cell.Editor.ContextMenuOpening -= OnContextMenuOpening;
+            cell.Editor.Tag = null;
+        }
     }
 
     private void OnPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -257,13 +294,48 @@ internal sealed class TableSelectionController : IDisposable
             ClearCellSelections();
         }
 
-        var cell = HitTestCell(point) ?? _dragCandidateCell;
+        _pendingPoint = point;
+        _hasPendingPoint = true;
+        if (!_selectionTimer.IsEnabled)
+            _selectionTimer.Start();
+
+        e.Handled = true;
+    }
+
+    internal void FlushPendingSelection()
+    {
+        if (!_dragging || !_hasPendingPoint)
+            return;
+
+        var point = _pendingPoint;
+        _hasPendingPoint = false;
+        UpdateSelectionAt(point);
+    }
+
+    private void OnSelectionTimerTick(object? sender, EventArgs e)
+    {
+        if (!_dragging || !_hasPendingPoint)
+        {
+            _selectionTimer.Stop();
+            return;
+        }
+
+        var point = _pendingPoint;
+        _hasPendingPoint = false;
+        UpdateSelectionAt(point);
+    }
+
+    private void UpdateSelectionAt(Point point)
+    {
+        var cell = HitTestCell(point) ?? _lastHitCell ?? _dragCandidateCell;
+        if (cell is null)
+            return;
+
         var position = GetPosition(cell, point);
         _dragCandidateCell = cell;
         _caretCell = cell;
         _caretPosition = position;
         UpdateSelection();
-        e.Handled = true;
     }
 
     private void OnPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -274,6 +346,8 @@ internal sealed class TableSelectionController : IDisposable
             return;
         }
 
+        FlushPendingSelection();
+        _selectionTimer.Stop();
         _dragging = false;
         _mouseCaptured = false;
         _caretCell?.Editor.Focus();
@@ -283,6 +357,8 @@ internal sealed class TableSelectionController : IDisposable
 
     private void OnLostMouseCapture(object sender, MouseEventArgs e)
     {
+        _selectionTimer.Stop();
+        _hasPendingPoint = false;
         _mouseCaptured = false;
         _dragging = false;
     }
@@ -339,36 +415,42 @@ internal sealed class TableSelectionController : IDisposable
 
         var startIndex = Math.Min(anchorIndex, caretIndex);
         var endIndex = Math.Max(anchorIndex, caretIndex);
-        var startCell = _cells[startIndex];
-        var endCell = _cells[endIndex];
         var startPosition = anchorIndex <= caretIndex ? _anchorPosition : _caretPosition;
         var endPosition = anchorIndex <= caretIndex ? _caretPosition : _anchorPosition;
 
-        for (var i = 0; i < _cells.Count; i++)
+        var targetCells = new HashSet<TableCellView>();
+        for (var i = startIndex; i <= endIndex; i++)
         {
             var cell = _cells[i];
-            if (i < startIndex || i > endIndex)
-            {
-                ClearCellSelection(cell);
-                continue;
-            }
+            targetCells.Add(cell);
 
+            // Middle cells are whole-cell selections and are written once. Only
+            // the two edge cells can change on every frame.
             if (startIndex == endIndex)
             {
-                SelectInCell(cell.Editor, startPosition, endPosition);
+                ApplyRange(cell, startPosition, endPosition);
             }
             else if (i == startIndex)
             {
-                SelectInCell(cell.Editor, startPosition, cell.Editor.Document.ContentEnd);
+                ApplyRange(cell, startPosition, cell.Editor.Document.ContentEnd);
             }
             else if (i == endIndex)
             {
-                SelectInCell(cell.Editor, cell.Editor.Document.ContentStart, endPosition);
+                ApplyRange(cell, cell.Editor.Document.ContentStart, endPosition);
             }
             else
             {
-                cell.Editor.SelectAll();
+                ApplyWholeCell(cell);
             }
+        }
+
+        foreach (var cell in _appliedRanges.Keys.ToList())
+        {
+            if (targetCells.Contains(cell))
+                continue;
+
+            ClearCellSelection(cell);
+            _appliedRanges.Remove(cell);
         }
 
         _selectedCells.Clear();
@@ -376,16 +458,38 @@ internal sealed class TableSelectionController : IDisposable
             _selectedCells.Add(_cells[i]);
     }
 
-    private static void SelectInCell(RichTextBox editor, TextPointer start, TextPointer end)
+    private void ApplyRange(TableCellView cell, TextPointer start, TextPointer end)
     {
         if (start.CompareTo(end) > 0)
             (start, end) = (end, start);
 
-        editor.Selection.Select(start, end);
+        var target = new AppliedRange(
+            cell.Editor.Document.ContentStart.GetOffsetToPosition(start),
+            cell.Editor.Document.ContentStart.GetOffsetToPosition(end),
+            WholeCell: false);
+
+        if (_appliedRanges.TryGetValue(cell, out var applied) && applied == target)
+            return;
+
+        cell.Editor.Selection.Select(start, end);
+        _appliedRanges[cell] = target;
+    }
+
+    private void ApplyWholeCell(TableCellView cell)
+    {
+        var target = new AppliedRange(0, int.MaxValue, WholeCell: true);
+        if (_appliedRanges.TryGetValue(cell, out var applied) && applied == target)
+            return;
+
+        cell.Editor.SelectAll();
+        _appliedRanges[cell] = target;
     }
 
     private static void ClearCellSelection(TableCellView cell)
     {
+        if (cell.Editor.Selection.IsEmpty)
+            return;
+
         var start = cell.Editor.Document.ContentStart;
         cell.Editor.Selection.Select(start, start);
     }
@@ -395,6 +499,7 @@ internal sealed class TableSelectionController : IDisposable
         foreach (var cell in _cells)
             ClearCellSelection(cell);
 
+        _appliedRanges.Clear();
         _selectedCells.Clear();
     }
 
@@ -412,32 +517,31 @@ internal sealed class TableSelectionController : IDisposable
 
     private TableCellView? HitTestCell(Point point)
     {
+        if (_lastHitCell is not null && _lastHitCellBounds.Contains(point))
+            return _lastHitCell;
+
         var hit = _tableRoot.InputHitTest(point) as DependencyObject;
         var cell = FindCell(hit);
-        if (cell is not null)
-            return cell;
+        if (cell is null)
+            return null;
 
-        foreach (var candidate in _cells)
-        {
-            var topLeft = candidate.Editor.TranslatePoint(new Point(0, 0), _tableRoot);
-            var width = candidate.Editor.ActualWidth;
-            var height = candidate.Editor.ActualHeight;
-            if (point.X >= topLeft.X && point.X <= topLeft.X + width
-                && point.Y >= topLeft.Y && point.Y <= topLeft.Y + height)
-            {
-                return candidate;
-            }
-        }
-
-        return null;
+        _lastHitCell = cell;
+        var topLeft = cell.Editor.TranslatePoint(new Point(0, 0), _tableRoot);
+        _lastHitCellBounds = new Rect(
+            topLeft,
+            new Size(cell.Editor.ActualWidth, cell.Editor.ActualHeight));
+        return cell;
     }
 
     private TableCellView? FindCell(DependencyObject? source)
     {
         while (source is not null)
         {
-            if (source is RichTextBox editor)
-                return _cells.FirstOrDefault(cell => ReferenceEquals(cell.Editor, editor));
+            if (source is RichTextBox editor && _cellByEditor.TryGetValue(editor, out var editorCell))
+                return editorCell;
+
+            if (source is Border border && _cellByContainer.TryGetValue(border, out var containerCell))
+                return containerCell;
 
             source = source switch
             {
