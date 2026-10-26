@@ -83,22 +83,54 @@ public sealed class TableRenderer(
                 ? column < table.Headers.Count ? table.Headers[column] : string.Empty
                 : column < table.Rows[rowIndex].Count ? table.Rows[rowIndex][column] : string.Empty;
 
-            var textBlock = new TextBlock
+            var paragraph = new Paragraph
             {
                 FontFamily = theme.BodyFont,
                 FontSize = theme.BaseFontSize,
                 Foreground = EditorBrushCache.Get(theme.ForegroundColor),
-                TextWrapping = TextWrapping.Wrap,
+                FontWeight = isHeader ? FontWeights.Bold : FontWeights.Normal,
                 TextAlignment = GetAlignment(table, column),
-                VerticalAlignment = VerticalAlignment.Center,
+                LineHeight = TypographyScale.ResolveBodyLineHeight(theme),
+                LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
+                Margin = new Thickness(0),
+                Padding = new Thickness(0),
+            };
+            _inlineRenderer.RenderInlines(paragraph, _markdownParser.ParseInlines(text));
+
+            var document = new FlowDocument(paragraph)
+            {
+                PagePadding = new Thickness(0),
+                FontFamily = theme.BodyFont,
+                FontSize = theme.BaseFontSize,
+                Foreground = EditorBrushCache.Get(theme.ForegroundColor),
                 LineHeight = TypographyScale.ResolveBodyLineHeight(theme),
                 LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
             };
 
-            if (isHeader)
-                textBlock.FontWeight = FontWeights.Bold;
-
-            _inlineRenderer.RenderInlines(textBlock, _markdownParser.ParseInlines(text));
+            var cellContent = new RichTextBox
+            {
+                Document = document,
+                IsReadOnly = true,
+                IsReadOnlyCaretVisible = false,
+                IsDocumentEnabled = true,
+                IsUndoEnabled = false,
+                AcceptsTab = false,
+                IsTabStop = false,
+                CaretBrush = Brushes.Transparent,
+                SelectionBrush = EditorBrushCache.Get(theme.LinkColor),
+                SelectionOpacity = 0.25,
+                IsInactiveSelectionHighlightEnabled = true,
+                BorderThickness = new Thickness(0),
+                Background = Brushes.Transparent,
+                Padding = new Thickness(0),
+                Margin = new Thickness(0),
+                VerticalAlignment = VerticalAlignment.Center,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                ContextMenu = CreateTableContextMenu(table, text),
+            };
 
             var cell = new Border
             {
@@ -109,22 +141,57 @@ public sealed class TableRenderer(
                         : Brushes.Transparent,
                 BorderBrush = EditorBrushCache.Get(theme.TableBorderColor),
                 BorderThickness = new Thickness(0, 0, 1, 1),
-                Padding = new Thickness(13, 6, 13, 6),
-                Child = textBlock,
-                ContextMenu = CreateTableContextMenu(table, text),
+                Padding = new Thickness(8, 6, 8, 6),
+                Child = cellContent,
             };
 
             Grid.SetRow(cell, gridRow);
             Grid.SetColumn(cell, column);
             if (column == flexibleColumn)
+            {
                 cell.MinWidth = 120;
+            }
+            else
+            {
+                cell.Width = EstimateCellWidth(table, column);
+            }
 
             grid.Children.Add(cell);
         }
     }
 
+    private double EstimateCellWidth(TableBlock table, int column)
+    {
+        var longestWord = 0;
+        void Measure(string text)
+        {
+            foreach (var word in text.Split(' ', '\t', '|'))
+                longestWord = Math.Max(longestWord, CountDisplayWidth(word));
+        }
+
+        if (column < table.Headers.Count)
+            Measure(table.Headers[column]);
+        foreach (var row in table.Rows)
+        {
+            if (column < row.Count)
+                Measure(row[column]);
+        }
+
+        // 0.55em per Latin character + left/right padding + cell borders.
+        return Math.Max(64, longestWord * theme.BaseFontSize * 0.55 + 26);
+    }
+
+    private static int CountDisplayWidth(string text)
+    {
+        var width = 0;
+        foreach (var character in text)
+            width += character >= 0x2E80 ? 2 : 1;
+        return width;
+    }
+
     private static int FindFlexibleColumn(TableBlock table, int columnCount)
-    {        var flexibleColumn = 0;
+    {
+        var flexibleColumn = 0;
         var bestLength = -1;
 
         for (var column = 0; column < columnCount; column++)

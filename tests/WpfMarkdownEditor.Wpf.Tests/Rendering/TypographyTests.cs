@@ -149,8 +149,9 @@ public sealed class TypographyTests
             var grid = GetTableGrid(document.Blocks.First());
             var headerCells = grid.Children
                 .OfType<Border>()
-                .Select(static cell => Assert.IsType<TextBlock>(cell.Child))
+                .Select(static cell => Assert.IsType<RichTextBox>(cell.Child))
                 .Take(3)
+                .Select(static cell => Assert.IsType<Paragraph>(cell.Document.Blocks.First()))
                 .ToList();
 
             Assert.Equal(TextAlignment.Left, headerCells[0].TextAlignment);
@@ -194,8 +195,26 @@ public sealed class TypographyTests
             Assert.Single(border.ContextMenu!.Items);
 
             var cell = grid.Children.OfType<Border>().First();
-            Assert.NotNull(cell.ContextMenu);
-            Assert.Equal(2, cell.ContextMenu!.Items.Count);
+            var richTextBox = Assert.IsType<RichTextBox>(cell.Child);
+            Assert.NotNull(richTextBox.ContextMenu);
+            Assert.Equal(2, richTextBox.ContextMenu!.Items.Count);
+        });
+    }
+
+    [Fact]
+    public void TableCells_ExposeSelectableReadOnlyDocuments()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var document = _renderer.Render(_parser.Parse(
+                "| A | B |\n| --- | --- |\n| 1 | 2 |"));
+            var grid = GetTableGrid(document.Blocks.First());
+            var cell = Assert.IsType<RichTextBox>(
+                grid.Children.OfType<Border>().First().Child);
+
+            Assert.True(cell.IsReadOnly);
+            cell.SelectAll();
+            Assert.Contains("A", cell.Selection.Text);
         });
     }
 
