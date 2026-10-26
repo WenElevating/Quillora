@@ -162,6 +162,61 @@ public sealed class TableSelectionTests
     }
 
     [Fact]
+    public void SelectFromPoints_FirstCellToLastCell_SelectsEveryCell()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var (_, controller, window) = RenderTableInWindow(
+                "| A | B |\n| --- | --- |\n| 1 | 2 |");
+            try
+            {
+                controller.RebuildGeometryForTest();
+                var first = controller.GetCellRectForTest(controller.Cells[0]);
+                var last = controller.GetCellRectForTest(controller.Cells[^1]);
+                var anchor = new Point(first.Left + 4, first.Top + first.Height / 2);
+                var caret = new Point(last.Right - 4, last.Top + last.Height / 2);
+
+                controller.SelectFromPointsForTest(anchor, caret);
+
+                Assert.All(controller.Cells, cell => Assert.False(cell.Editor.Selection.IsEmpty));
+                Assert.Equal(
+                    $"A\tB{Environment.NewLine}1\t2",
+                    controller.GetSelectionText());
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void SelectionOverlay_HighlightsEverySelectedCell()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var (border, controller, window) = RenderTableInWindow(
+                "| A | B |\n| --- | --- |\n| 1 | 2 |");
+            try
+            {
+                var grid = Assert.IsType<Grid>(border.Child);
+                var overlay = Assert.Single(grid.Children.OfType<Canvas>());
+
+                controller.SelectCells(0, controller.Cells.Count - 1);
+
+                Assert.Equal(controller.Cells.Count, overlay.Children.Count);
+
+                controller.ClearSelection();
+                Assert.Empty(overlay.Children);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void ResolveCell_EveryCellCenter_ReturnsThatCell()
     {
         WpfTestHost.Run(() =>

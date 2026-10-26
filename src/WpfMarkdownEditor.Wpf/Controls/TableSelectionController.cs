@@ -4,7 +4,9 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using System.Windows.Threading;
+using WpfMarkdownEditor.Wpf.Rendering;
 
 namespace WpfMarkdownEditor.Wpf.Controls;
 
@@ -31,6 +33,8 @@ internal sealed class TableSelectionController : IDisposable
     // per UI frame. Reapplying a RichTextBox selection for every mouse event is
     // the main source of drag lag on larger tables.
     private readonly DispatcherTimer _selectionTimer;
+    private readonly Canvas? _selectionOverlay;
+    private readonly Brush _selectionOverlayBrush;
 
     private TableCellView? _anchorCell;
     private TextPointer? _anchorPosition;
@@ -65,6 +69,22 @@ internal sealed class TableSelectionController : IDisposable
                 _cellByContainer[container] = cell;
                 _containerByCell[cell] = container;
             }
+        }
+
+        _selectionOverlayBrush = EditorBrushCache.Get(
+            Color.FromArgb(0x38, 0x41, 0x83, 0xC4));
+        if (tableRoot.Child is Grid grid)
+        {
+            _selectionOverlay = new Canvas
+            {
+                IsHitTestVisible = false,
+                ClipToBounds = true,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Stretch,
+            };
+            Grid.SetRowSpan(_selectionOverlay, Math.Max(1, grid.RowDefinitions.Count));
+            Grid.SetColumnSpan(_selectionOverlay, Math.Max(1, grid.ColumnDefinitions.Count));
+            grid.Children.Add(_selectionOverlay);
         }
 
         _selectionTimer = new DispatcherTimer(DispatcherPriority.Input, tableRoot.Dispatcher)
@@ -114,6 +134,23 @@ internal sealed class TableSelectionController : IDisposable
 
     internal Rect GetCellRectForTest(TableCellView cell) =>
         _cellRects.TryGetValue(cell, out var rect) ? rect : Rect.Empty;
+
+    internal void SelectFromPointsForTest(Point anchorPoint, Point caretPoint)
+    {
+        if (_cellRects.Count == 0)
+            RebuildGeometry();
+
+        var anchorCell = ResolveCell(anchorPoint);
+        var caretCell = ResolveCell(caretPoint);
+        if (anchorCell is null || caretCell is null)
+            return;
+
+        _anchorCell = anchorCell;
+        _anchorPosition = GetPosition(anchorCell, anchorPoint);
+        _caretCell = caretCell;
+        _caretPosition = GetPosition(caretCell, caretPoint);
+        UpdateSelection();
+    }
 
     internal static bool IsTableSource(DependencyObject? source)
     {
@@ -211,6 +248,7 @@ internal sealed class TableSelectionController : IDisposable
             ClearCellSelection(cell);
 
         _selectedCells.Clear();
+        _selectionOverlay?.Children.Clear();
         _anchorCell = null;
         _anchorPosition = null;
         _caretCell = null;
@@ -547,6 +585,37 @@ internal sealed class TableSelectionController : IDisposable
         _selectedCells.Clear();
         for (var i = startIndex; i <= endIndex; i++)
             _selectedCells.Add(_cells[i]);
+
+        RenderSelectionOverlay();
+    }
+
+    /// <summary>
+    /// Inactive RichTextBox selections are not reliably painted by WPF inside a
+    /// FlowDocument, so draw a lightweight overlay for every selected cell.
+    /// </summary>
+    private void RenderSelectionOverlay()
+    {
+        if (_selectionOverlay is null)
+            return;
+
+        _selectionOverlay.Children.Clear();
+        foreach (var cell in _selectedCells)
+        {
+            if (cell.Editor.Selection.IsEmpty || cell.Editor.ActualWidth <= 0 || cell.Editor.ActualHeight <= 0)
+                continue;
+
+            var origin = cell.Editor.TranslatePoint(new Point(0, 0), _selectionOverlay);
+            var rectangle = new Rectangle
+            {
+                Width = cell.Editor.ActualWidth,
+                Height = cell.Editor.ActualHeight,
+                Fill = _selectionOverlayBrush,
+                IsHitTestVisible = false,
+            };
+            Canvas.SetLeft(rectangle, origin.X);
+            Canvas.SetTop(rectangle, origin.Y);
+            _selectionOverlay.Children.Add(rectangle);
+        }
     }
 
     private void ApplyRange(TableCellView cell, TextPointer start, TextPointer end)
@@ -592,6 +661,7 @@ internal sealed class TableSelectionController : IDisposable
 
         _appliedRanges.Clear();
         _selectedCells.Clear();
+        _selectionOverlay?.Children.Clear();
     }
 
     private void Activate()
