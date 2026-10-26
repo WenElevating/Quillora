@@ -4,6 +4,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using WpfMarkdownEditor.Core.Parsing.Blocks;
 using WpfMarkdownEditor.Wpf.Rendering;
 using WpfMarkdownEditor.Wpf.Theming;
 using WpfBlock = System.Windows.Documents.Block;
@@ -51,7 +52,7 @@ internal sealed class PreviewViewportController : IDisposable
 
     public bool EnableScrollSync { get; set; } = true;
 
-    public bool HighlightActiveBlock { get; set; } = true;
+    public bool HighlightActiveBlock { get; set; }
 
     /// <summary>
     /// Captures the source line that should stay in view after the next render.
@@ -211,7 +212,17 @@ internal sealed class PreviewViewportController : IDisposable
 
         ClearHighlight();
 
-        // Blocks rendered with their own background (code, tables, quotes) keep it.
+        // Only body paragraphs get the optional focus tint. Headings, code, tables,
+        // quotes and lists keep their own visual treatment (Typora uses a heading
+        // rule, not a highlight rectangle).
+        if (block is not Paragraph
+            || (RenderedBlockMetadata.TryGet(block, out var info)
+                && info.Signature.BlockType == typeof(HeadingBlock)))
+        {
+            return;
+        }
+
+        // Blocks rendered with their own background keep it.
         if (block.Background is not null)
             return;
 

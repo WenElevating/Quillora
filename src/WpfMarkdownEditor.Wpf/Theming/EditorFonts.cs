@@ -11,31 +11,34 @@ namespace WpfMarkdownEditor.Wpf.Theming;
 /// parser on purpose: a pack URI contains commas (<c>application:,,,</c>), so
 /// <c>new FontFamily("pack://..., Noto Sans SC, ...")</c> in C# is split at the wrong place and
 /// silently falls back to the last plain family. The XAML converter handles the URI form correctly.
-/// Loading is retried until the WPF application is available, then cached.
+///
+/// Font families are cached per thread because WPF font/resource objects are thread-affine;
+/// accessing a shared family from several STA threads (tests, embedded editors) corrupts
+/// WPF's internal caches. Loading is retried until the WPF application/resource system exists.
 /// </remarks>
 public static class EditorFonts
 {
     private const string DictionaryUri =
         "pack://application:,,,/WpfMarkdownEditor.Wpf;component/Theming/EditorFonts.xaml";
 
-    private static readonly object Sync = new();
-    private static readonly FontFamily SegoeFallback = new("Segoe UI");
-    private static readonly FontFamily ConsolasFallback = new("Consolas");
-
-    private static FontFamily? _body;
-    private static FontFamily? _code;
+    [ThreadStatic] private static FontFamily? _body;
+    [ThreadStatic] private static FontFamily? _code;
+    [ThreadStatic] private static FontFamily? _segoeFallback;
+    [ThreadStatic] private static FontFamily? _consolasFallback;
 
     /// <summary>Body / heading font: Open Sans for Latin, Noto Sans SC for CJK, YaHei UI as last resort.</summary>
     public static FontFamily Body
     {
         get
         {
-            lock (Sync)
+            if (_body is null)
             {
-                _body ??= Load("EditorBodyFont");
+                var loaded = Load("EditorBodyFont");
+                if (loaded is not null)
+                    _body = loaded;
             }
 
-            return _body ?? SegoeFallback;
+            return _body ??= _segoeFallback ??= new FontFamily("Segoe UI");
         }
     }
 
@@ -44,12 +47,14 @@ public static class EditorFonts
     {
         get
         {
-            lock (Sync)
+            if (_code is null)
             {
-                _code ??= Load("EditorCodeFont");
+                var loaded = Load("EditorCodeFont");
+                if (loaded is not null)
+                    _code = loaded;
             }
 
-            return _code ?? ConsolasFallback;
+            return _code ??= _consolasFallback ??= new FontFamily("Consolas");
         }
     }
 

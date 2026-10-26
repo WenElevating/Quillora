@@ -29,14 +29,14 @@ public sealed class MarkdownEditorPreviewTests
     }
 
     [Fact]
-    public void ViewportOptions_DefaultToEnabled()
+    public void ViewportOptions_DefaultsMatchReadingFirstExperience()
     {
         WpfTestHost.Run(() =>
         {
             using var editor = new MarkdownEditor();
 
             Assert.True(editor.EnableScrollSync);
-            Assert.True(editor.HighlightActiveBlock);
+            Assert.False(editor.HighlightActiveBlock);
         });
     }
 
@@ -118,6 +118,33 @@ public sealed class MarkdownEditorPreviewTests
     }
 
     [Fact]
+    public void HighlightActiveBlock_DoesNotTintHeadings()
+    {
+        WpfTestHost.Run(() =>
+        {
+            using var editor = new MarkdownEditor { HighlightActiveBlock = true };
+            var window = ShowInWindow(editor);
+            try
+            {
+                editor.Markdown = "# Heading\n\nbody paragraph";
+                Assert.True(WaitUntil(() => editor.PreviewViewer.Document?.Blocks.Count == 2));
+
+                editor.GoToLine(1);
+                window.UpdateLayout();
+
+                var heading = editor.PreviewViewer.Document!.Blocks
+                    .Cast<System.Windows.Documents.Block>()
+                    .First();
+                Assert.Null(heading.Background);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void GoToLine_WithScrollSync_ScrollsPreviewAndHighlightsCurrentBlock()
     {
         WpfTestHost.Run(() =>
@@ -126,6 +153,7 @@ public sealed class MarkdownEditorPreviewTests
             var window = ShowInWindow(editor);
             try
             {
+                editor.HighlightActiveBlock = true;
                 var markdown = string.Join("\n\n", Enumerable.Range(0, 80).Select(i => $"paragraph {i}"));
                 editor.Markdown = markdown;
                 Assert.True(WaitUntil(() => editor.PreviewViewer.Document?.Blocks.Count == 80));

@@ -77,7 +77,7 @@ public partial class MarkdownEditor : UserControl, IDisposable
             nameof(HighlightActiveBlock),
             typeof(bool),
             typeof(MarkdownEditor),
-            new PropertyMetadata(true, OnViewportOptionsChanged));
+            new PropertyMetadata(false, OnViewportOptionsChanged));
 
     #endregion
 
@@ -133,7 +133,8 @@ public partial class MarkdownEditor : UserControl, IDisposable
     }
 
     /// <summary>
-    /// When true, the preview block containing the source caret line is highlighted.
+    /// When true, the preview body paragraph containing the source caret line gets a
+    /// subtle focus tint. Headings and code/table/quote/list blocks are never tinted.
     /// </summary>
     public bool HighlightActiveBlock
     {
