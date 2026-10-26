@@ -27,7 +27,24 @@ internal sealed class SmartEditingController(TextBox textBox, Action<TextEditOpe
         else if (e.Key == Key.Tab)
         {
             var shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
-            if (MarkdownEditingOperations.TryHandleTab(textBox.Text, textBox.CaretIndex, shift, out var operation))
+            if (MarkdownEditingOperations.TryHandleTab(
+                    textBox.Text,
+                    textBox.SelectionStart,
+                    textBox.SelectionLength,
+                    shift,
+                    out var operation))
+            {
+                e.Handled = true;
+                Apply(operation);
+            }
+        }
+        else if (e.Key == Key.Back)
+        {
+            if (MarkdownEditingOperations.TryHandleBackspace(
+                    textBox.Text,
+                    textBox.SelectionStart,
+                    textBox.SelectionLength,
+                    out var operation))
             {
                 e.Handled = true;
                 Apply(operation);

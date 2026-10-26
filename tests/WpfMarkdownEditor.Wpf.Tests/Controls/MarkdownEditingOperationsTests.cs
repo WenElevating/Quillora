@@ -133,4 +133,209 @@ public sealed class MarkdownEditingOperationsTests
         Assert.Equal("paragraph" + NewLine + "  - item", operation.Text);
         Assert.Equal(caret + 2, operation.SelectionStart);
     }
+
+    [Fact]
+    public void TryHandleEnter_Blockquote_ContinuesQuote()
+    {
+        var handled = MarkdownEditingOperations.TryHandleEnter("> quote", 7, out var operation);
+
+        Assert.True(handled);
+        Assert.Equal("> quote" + NewLine + "> ", operation.Text);
+    }
+
+    [Fact]
+    public void TryHandleEnter_NestedBlockquote_KeepsDepth()
+    {
+        var handled = MarkdownEditingOperations.TryHandleEnter("> > quote", 9, out var operation);
+
+        Assert.True(handled);
+        Assert.Equal("> > quote" + NewLine + "> > ", operation.Text);
+    }
+
+    [Fact]
+    public void TryHandleEnter_BlockquoteWithoutSpace_NormalizesContinuation()
+    {
+        var handled = MarkdownEditingOperations.TryHandleEnter(">quote", 6, out var operation);
+
+        Assert.True(handled);
+        Assert.Equal(">quote" + NewLine + "> ", operation.Text);
+    }
+
+    [Fact]
+    public void TryHandleEnter_TaskItem_AddsUncheckedTask()
+    {
+        var handled = MarkdownEditingOperations.TryHandleEnter("- [x] done", 10, out var operation);
+
+        Assert.True(handled);
+        Assert.Equal("- [x] done" + NewLine + "- [ ] ", operation.Text);
+    }
+
+    [Fact]
+    public void TryHandleEnter_EmptyTaskItem_ExitsTaskList()
+    {
+        var handled = MarkdownEditingOperations.TryHandleEnter("- [ ] ", 6, out var operation);
+
+        Assert.True(handled);
+        Assert.Equal(NewLine, operation.Text);
+        Assert.Equal(NewLine.Length, operation.SelectionStart);
+    }
+
+    [Fact]
+    public void TryHandleEnter_EmptyBlockquote_ExitsQuote()
+    {
+        var handled = MarkdownEditingOperations.TryHandleEnter("> ", 2, out var operation);
+
+        Assert.True(handled);
+        Assert.Equal(NewLine, operation.Text);
+    }
+
+    [Fact]
+    public void TryHandleEnter_OrderedParenMarker_IncrementsAndKeepsDelimiter()
+    {
+        var handled = MarkdownEditingOperations.TryHandleEnter("3) item", 7, out var operation);
+
+        Assert.True(handled);
+        Assert.Equal("3) item" + NewLine + "4) ", operation.Text);
+    }
+
+    [Fact]
+    public void TryHandleEnter_InsideFencedCode_ReturnsFalse()
+    {
+        var text = "```" + NewLine + "- item";
+
+        var handled = MarkdownEditingOperations.TryHandleEnter(text, text.Length, out _);
+
+        Assert.False(handled);
+    }
+
+    [Fact]
+    public void TryHandleTab_MultiLineSelection_IndentsEveryLineAndPreservesSelection()
+    {
+        var text = "- one" + NewLine + "- two";
+        var selectedLength = text.Length;
+
+        var handled = MarkdownEditingOperations.TryHandleTab(
+            text,
+            selectionStart: 0,
+            selectionLength: selectedLength,
+            shift: false,
+            out var operation);
+
+        Assert.True(handled);
+        Assert.Equal("  - one" + NewLine + "  - two", operation.Text);
+        Assert.Equal(2, operation.SelectionStart);
+        Assert.Equal(operation.Text.Length - 2, operation.SelectionLength);
+    }
+
+    [Fact]
+    public void TryHandleTab_ShiftMultiLineSelection_OutdentsEveryLine()
+    {
+        var text = "  - one" + NewLine + "  - two";
+
+        var handled = MarkdownEditingOperations.TryHandleTab(
+            text,
+            selectionStart: 0,
+            selectionLength: text.Length,
+            shift: true,
+            out var operation);
+
+        Assert.True(handled);
+        Assert.Equal("- one" + NewLine + "- two", operation.Text);
+        Assert.Equal(0, operation.SelectionStart);
+    }
+
+    [Fact]
+    public void TryHandleTab_MultiLineInsideFence_ReturnsFalse()
+    {
+        var text = "```" + NewLine + "- one" + NewLine + "- two";
+
+        var handled = MarkdownEditingOperations.TryHandleTab(
+            text,
+            4,
+            text.Length - 4,
+            shift: false,
+            out _);
+
+        Assert.False(handled);
+    }
+
+    [Fact]
+    public void TryHandleTab_PlainMultiLineSelection_ReturnsFalse()
+    {
+        var text = "plain one" + NewLine + "plain two";
+
+        var handled = MarkdownEditingOperations.TryHandleTab(
+            text,
+            0,
+            text.Length,
+            shift: false,
+            out _);
+
+        Assert.False(handled);
+    }
+
+    [Fact]
+    public void TryHandleBackspace_ListMarker_RemovesMarkerAndKeepsContent()
+    {
+        var handled = MarkdownEditingOperations.TryHandleBackspace("- item", 2, 0, out var operation);
+
+        Assert.True(handled);
+        Assert.Equal("item", operation.Text);
+        Assert.Equal(0, operation.SelectionStart);
+    }
+
+    [Fact]
+    public void TryHandleBackspace_BlockquoteMarker_RemovesMarker()
+    {
+        var handled = MarkdownEditingOperations.TryHandleBackspace("> quote", 2, 0, out var operation);
+
+        Assert.True(handled);
+        Assert.Equal("quote", operation.Text);
+    }
+
+    [Fact]
+    public void TryHandleBackspace_TaskMarker_RemovesWholePrefix()
+    {
+        var handled = MarkdownEditingOperations.TryHandleBackspace("- [ ] task", 6, 0, out var operation);
+
+        Assert.True(handled);
+        Assert.Equal("task", operation.Text);
+    }
+
+    [Fact]
+    public void TryHandleBackspace_InsideContent_ReturnsFalse()
+    {
+        var handled = MarkdownEditingOperations.TryHandleBackspace("plain text", 5, 0, out _);
+
+        Assert.False(handled);
+    }
+
+    [Fact]
+    public void TryHandleBackspace_WithSelection_ReturnsFalse()
+    {
+        var handled = MarkdownEditingOperations.TryHandleBackspace("- item", 0, 4, out _);
+
+        Assert.False(handled);
+    }
+
+    [Fact]
+    public void TryHandleBackspace_InsideFencedCode_ReturnsFalse()
+    {
+        var text = "```" + NewLine + "- item";
+
+        var handled = MarkdownEditingOperations.TryHandleBackspace(text, text.Length, 0, out _);
+
+        Assert.False(handled);
+    }
+
+    [Fact]
+    public void TryHandleEnter_CrLfDocument_ContinuesList()
+    {
+        var text = "- one" + NewLine + "- two";
+
+        var handled = MarkdownEditingOperations.TryHandleEnter(text, text.Length, out var operation);
+
+        Assert.True(handled);
+        Assert.Equal(text + NewLine + "- ", operation.Text);
+    }
 }
