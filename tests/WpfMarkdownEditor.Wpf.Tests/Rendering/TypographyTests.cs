@@ -146,12 +146,36 @@ public sealed class TypographyTests
         {
             var markdown = "| Left | Center | Right |\n| :--- | :---: | ---: |\n| a | b | c |";
             var document = _renderer.Render(_parser.Parse(markdown));
-            var table = Assert.IsType<Table>(document.Blocks.First());
-            var row = table.RowGroups.First().Rows.First();
+            var grid = GetTableGrid(document.Blocks.First());
+            var headerCells = grid.Children
+                .OfType<Border>()
+                .Select(static cell => Assert.IsType<TextBlock>(cell.Child))
+                .Take(3)
+                .ToList();
 
-            Assert.Equal(TextAlignment.Left, CellParagraph(row, 0).TextAlignment);
-            Assert.Equal(TextAlignment.Center, CellParagraph(row, 1).TextAlignment);
-            Assert.Equal(TextAlignment.Right, CellParagraph(row, 2).TextAlignment);
+            Assert.Equal(TextAlignment.Left, headerCells[0].TextAlignment);
+            Assert.Equal(TextAlignment.Center, headerCells[1].TextAlignment);
+            Assert.Equal(TextAlignment.Right, headerCells[2].TextAlignment);
+        });
+    }
+
+    [Fact]
+    public void Table_ColumnWidthsFollowContentProportions()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var markdown =
+                "| Property | Type | Default | Description |\n" +
+                "| --- | --- | --- | --- |\n" +
+                "| Markdown | string | \"\" | Markdown content with two-way binding and a much longer description. |";
+            var document = _renderer.Render(_parser.Parse(markdown));
+            var grid = GetTableGrid(document.Blocks.First());
+
+            Assert.Equal(4, grid.ColumnDefinitions.Count);
+            Assert.True(grid.ColumnDefinitions[3].Width.IsStar);
+            Assert.True(grid.ColumnDefinitions[0].Width.IsAuto);
+            Assert.True(grid.ColumnDefinitions[1].Width.IsAuto);
+            Assert.True(grid.ColumnDefinitions[2].Width.IsAuto);
         });
     }
 
@@ -243,6 +267,10 @@ public sealed class TypographyTests
             _ => throw new InvalidOperationException($"Unexpected heading block {block.GetType().Name}"),
         };
 
-    private static Paragraph CellParagraph(TableRow row, int index) =>
-        Assert.IsType<Paragraph>(row.Cells.ElementAt(index).Blocks.First());
+    private static Grid GetTableGrid(System.Windows.Documents.Block block)
+    {
+        var container = Assert.IsType<BlockUIContainer>(block);
+        var border = Assert.IsType<Border>(container.Child);
+        return Assert.IsType<Grid>(border.Child);
+    }
 }

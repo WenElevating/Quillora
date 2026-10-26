@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
 using WpfMarkdownEditor.Core;
@@ -38,6 +39,12 @@ public sealed class InlineRenderer
     {
         foreach (var inline in BatchTextInlines(inlines))
             span.Inlines.Add(RenderInline(inline));
+    }
+
+    public void RenderInlines(TextBlock textBlock, List<CoreInline> inlines)
+    {
+        foreach (var inline in BatchTextInlines(inlines))
+            textBlock.Inlines.Add(RenderInline(inline));
     }
 
     /// <summary>
