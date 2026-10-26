@@ -36,7 +36,7 @@ Quillora is a WPF Markdown workspace for writing, previewing, translating, and e
 - **Markdown formatting** - Menu commands for headings, blockquote, ordered/bullet lists, bold, italic, strikethrough, inline code, links, code blocks, tables, and horizontal rules.
 - **Smart editing** - List, task-list and blockquote auto-continuation; empty-item exit; Backspace removes block markers; multi-line Tab/Shift+Tab indentation; selection wrapping; and paste handling for clipboard images and image files.
 - **Rendering coverage** - Headings, paragraphs, blockquotes, lists, tables, thematic breaks, inline styles, code blocks, local/remote images, SVG images, HTML image tags, linked image blocks, and responsive image sizing.
-- **Syntax highlighting** - C#, JavaScript/TypeScript, Python, JSON/JSONC, SQL, and shell code blocks.
+- **Syntax highlighting** - C#, JavaScript/TypeScript, Python, JSON/JSONC, SQL, and shell code blocks; highlighting is applied lazily as code blocks enter the preview viewport.
 - **Translation preview** - Translate Markdown through Baidu Translate or OpenAI-compatible chat APIs while preserving Markdown structure and leaving the editor text unchanged.
 - **Themes** - GitHub, GitHub Dark, Claude, Claude Dark, Light, and Dark, with theme-aware editor chrome and scrollbars.
 - **Localization** - English and Simplified Chinese resources for the sample app.

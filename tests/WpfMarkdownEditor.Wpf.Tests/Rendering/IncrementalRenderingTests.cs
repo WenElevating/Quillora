@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Windows.Documents;
 using WpfMarkdownEditor.Core.Parsing;
+using WpfMarkdownEditor.Core.Parsing.Blocks;
 using WpfMarkdownEditor.Wpf.Rendering;
+using WpfMarkdownEditor.Wpf.SyntaxHighlighting;
 using WpfMarkdownEditor.Wpf.Theming;
 using Xunit;
 using Xunit.Abstractions;
@@ -229,6 +231,48 @@ public sealed class IncrementalRenderingTests
             Assert.InRange(renderer.LastRenderStats.Rebuilt, 1, 3);
             Assert.True(renderer.LastRenderStats.Reused >= 997);
             Assert.True(renderer.LastRenderStats.ElapsedMilliseconds >= 0);
+        });
+    }
+
+    [Fact]
+    public void Render_CodeHeavyDocument_ReportsTiming()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var codeLines = string.Join(
+                "\n",
+                Enumerable.Range(0, 40).Select(i => $"var value{i} = {i}; // comment {i}"));
+            var markdown = string.Join(
+                "\n\n",
+                Enumerable.Range(0, 100).Select(_ => "```csharp\n" + codeLines + "\n```"));
+
+            var stopwatch = Stopwatch.StartNew();
+            var blocks = _parser.Parse(markdown);
+            stopwatch.Stop();
+            var parseMs = stopwatch.ElapsedMilliseconds;
+
+            var highlighter = new SyntaxHighlighter();
+            stopwatch.Restart();
+            var tokenCount = 0;
+            foreach (var codeBlock in blocks.OfType<CodeBlock>())
+                tokenCount += highlighter.Tokenize(codeBlock.Code, codeBlock.Language).Count;
+            stopwatch.Stop();
+            var tokenizeMs = stopwatch.ElapsedMilliseconds;
+
+            var renderer = new FlowDocumentRenderer(EditorTheme.Light, null, highlighter);
+            stopwatch.Restart();
+            var document = renderer.Render(blocks);
+            stopwatch.Stop();
+
+            _output.WriteLine(
+                $"100 code blocks x 40 lines: parse {parseMs}ms, tokenize {tokenizeMs}ms ({tokenCount} tokens), " +
+                $"render {stopwatch.ElapsedMilliseconds}ms, document blocks={document.Blocks.Count}");
+            Assert.Equal(100, document.Blocks.Count);
+            var codeParagraph = document.Blocks
+                .OfType<Section>()
+                .SelectMany(static section => section.Blocks.OfType<Paragraph>())
+                .First();
+            Assert.Single(codeParagraph.Inlines);
         });
     }
 

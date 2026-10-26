@@ -28,6 +28,7 @@ internal sealed class PreviewRenderController : IDisposable
     private readonly Func<EditorTheme> _themeProvider;
     private readonly Func<string> _baseDirectoryProvider;
     private readonly PreviewViewportController? _viewportController;
+    private readonly CodeBlockHighlightScheduler _codeHighlighter;
     private readonly Action<PreviewRenderedEventArgs>? _onRendered;
 
     private ImageLoader _imageLoader;
@@ -58,6 +59,7 @@ internal sealed class PreviewRenderController : IDisposable
         _onRendered = onRendered;
         _imageLoader = new ImageLoader(baseDirectoryProvider());
         _imageResolver = new CachingImageResolver(_imageLoader);
+        _codeHighlighter = new CodeBlockHighlightScheduler(previewViewer, RequestPreviewLayoutRefresh);
 
         _debounceTimer = new DispatcherTimer(DispatcherPriority.Background, previewViewer.Dispatcher)
         {
@@ -204,6 +206,7 @@ internal sealed class PreviewRenderController : IDisposable
 
             var anchor = _viewportController?.CaptureAnchor();
             _viewportController?.OnBeforeRender();
+            _codeHighlighter.OnBeforeRender();
             var renderIncrementally = _translatedMarkdown is null;
             var existingDocument = renderIncrementally ? _previewDocument : null;
             if (existingDocument is not null && ReferenceEquals(_previewViewer.Document, existingDocument))
@@ -222,6 +225,7 @@ internal sealed class PreviewRenderController : IDisposable
             if (anchor is { } captured)
                 _viewportController?.RestoreAnchor(captured);
             _viewportController?.OnAfterRender();
+            _codeHighlighter.OnDocumentRendered();
 
             try
             {
@@ -333,6 +337,7 @@ internal sealed class PreviewRenderController : IDisposable
 
     public void Dispose()
     {
+        _codeHighlighter.Dispose();
         _imageLoader.Dispose();
         _debounceTimer.Stop();
         var oldCts = Interlocked.Exchange(ref _cts, null);

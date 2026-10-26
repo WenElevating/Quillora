@@ -9,13 +9,6 @@ namespace WpfMarkdownEditor.Wpf.Rendering.Renderers;
 
 public sealed class CodeBlockRenderer(EditorTheme theme, SyntaxHighlighter? highlighter = null) : IBlockRenderer
 {
-    private readonly SolidColorBrush _defaultBrush = new(theme.CodeForeground);
-    private readonly SolidColorBrush _keywordBrush = new(theme.SyntaxKeywordColor);
-    private readonly SolidColorBrush _commentBrush = new(theme.SyntaxCommentColor);
-    private readonly SolidColorBrush _stringBrush = new(theme.SyntaxStringColor);
-    private readonly SolidColorBrush _numberBrush = new(theme.SyntaxNumberColor);
-    private readonly SolidColorBrush _typeBrush = new(theme.SyntaxTypeColor);
-
     public System.Windows.Documents.Block Render(Core.Parsing.Block block)
     {
         var code = (CodeBlock)block;
@@ -28,22 +21,15 @@ public sealed class CodeBlockRenderer(EditorTheme theme, SyntaxHighlighter? high
             Margin = new Thickness(0),
         };
 
-        // Apply syntax highlighting when language hint is available
+        // Start with plain text. Syntax highlighting is applied by the viewport-aware
+        // scheduler only for code blocks that are visible, because every colored
+        // segment costs a WPF Run and large code-heavy documents would otherwise stall.
+        paragraph.Inlines.Add(new Run(code.Code));
+
         if (highlighter is not null && !string.IsNullOrEmpty(code.Language))
         {
-            var tokens = highlighter.Tokenize(code.Code, code.Language);
-            foreach (var token in tokens)
-            {
-                var brush = GetTokenBrush(token.Type);
-                paragraph.Inlines.Add(new Run(token.Text)
-                {
-                    Foreground = brush,
-                });
-            }
-        }
-        else
-        {
-            paragraph.Inlines.Add(new Run(code.Code));
+            var target = new CodeBlockTarget(paragraph, code.Code, code.Language, highlighter, theme);
+            CodeBlockHighlightMetadata.Set(paragraph, target);
         }
 
         // Wrap in Section for background + border (GitHub-style)
@@ -58,14 +44,4 @@ public sealed class CodeBlockRenderer(EditorTheme theme, SyntaxHighlighter? high
         section.Blocks.Add(paragraph);
         return section;
     }
-
-    private Brush GetTokenBrush(TokenType type) => type switch
-    {
-        TokenType.Keyword => _keywordBrush,
-        TokenType.Comment => _commentBrush,
-        TokenType.String => _stringBrush,
-        TokenType.Number => _numberBrush,
-        TokenType.Type => _typeBrush,
-        _ => _defaultBrush
-    };
 }
