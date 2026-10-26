@@ -28,7 +28,8 @@ Quillora is a WPF Markdown workspace for writing, previewing, translating, and e
 
 ## Highlights
 
-- **Live split preview** - Edit Markdown on the left and render a debounced preview on the right.
+- **Live split preview** - Edit Markdown on the left and render a debounced preview on the right, with block-level incremental rendering that reuses unchanged blocks.
+- **Source/preview sync** - The preview follows the caret block, highlights the current block, and clicking preview text jumps to the matching source line.
 - **Clean Quillora branding** - Brand-only empty-window title, refreshed app icon, and installer metadata.
 - **File workflows** - New/open/save/save as, open folder, recent files, quick open, move file, delete file, properties, show in sidebar, import text/Markdown, export HTML, and print.
 - **Workspace sidebar** - File tree and outline tabs with animated show/hide behavior.
@@ -117,6 +118,8 @@ Editor.MarkdownChanged += (_, e) =>
 | `Theme` | `EditorTheme` | `Light` | Current editor and preview theme. |
 | `ShowPreview` | `bool` | `true` | Shows or hides the preview pane. |
 | `PreviewWidth` | `GridLength` | `1*` | Width of the preview pane. |
+| `EnableScrollSync` | `bool` | `true` | Scrolls the preview to the caret block. |
+| `HighlightActiveBlock` | `bool` | `true` | Highlights the preview block containing the caret. |
 
 ### Common Methods
 
@@ -126,6 +129,7 @@ Editor.MarkdownChanged += (_, e) =>
 | `SaveFileAsync(string path)` | Saves the current Markdown text. |
 | `ApplyTheme(EditorTheme theme)` | Applies a built-in or custom theme. |
 | `FocusEditor()` | Focuses the source editor. |
+| `GoToLine(int line)` | Places the caret on a 1-based source line and scrolls it into view. |
 | `WrapSelection(string before, string after)` | Wraps the selected text with Markdown markers. |
 | `InsertText(string text)` | Inserts text at the caret. |
 | `ToggleLinePrefix(string prefix)` | Toggles heading, quote, or list prefixes on the current selection. |
@@ -137,6 +141,7 @@ Editor.MarkdownChanged += (_, e) =>
 | Event | Description |
 |---|---|
 | `MarkdownChanged` | Raised when editor text changes. |
+| `PreviewRendered` | Raised after a preview render, carrying the parsed block AST. |
 
 ## Rendering and Images
 

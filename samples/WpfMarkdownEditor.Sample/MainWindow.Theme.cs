@@ -132,7 +132,7 @@ public partial class MainWindow
         UpdateTitle();
         RefreshStatusText();
         if (OutlinePanel.Visibility == Visibility.Visible)
-            UpdateOutline();
+            RenderOutline();
         UpdateSearchCount();
     }
 

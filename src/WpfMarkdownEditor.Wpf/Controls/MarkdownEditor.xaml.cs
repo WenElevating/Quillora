@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
+using WpfMarkdownEditor.Core.Parsing;
 using WpfMarkdownEditor.Wpf.Theming;
 using WpfMarkdownEditor.Wpf.Localization;
 
@@ -56,6 +57,20 @@ public partial class MarkdownEditor : UserControl, IDisposable
             typeof(MarkdownEditor),
             new PropertyMetadata(null, OnDocumentPathChanged));
 
+    public static readonly DependencyProperty EnableScrollSyncProperty =
+        DependencyProperty.Register(
+            nameof(EnableScrollSync),
+            typeof(bool),
+            typeof(MarkdownEditor),
+            new PropertyMetadata(true, OnViewportOptionsChanged));
+
+    public static readonly DependencyProperty HighlightActiveBlockProperty =
+        DependencyProperty.Register(
+            nameof(HighlightActiveBlock),
+            typeof(bool),
+            typeof(MarkdownEditor),
+            new PropertyMetadata(true, OnViewportOptionsChanged));
+
     #endregion
 
     #region Public API
@@ -90,20 +105,53 @@ public partial class MarkdownEditor : UserControl, IDisposable
         set => SetValue(DocumentPathProperty, value);
     }
 
+    /// <summary>
+    /// When true, the preview scrolls to the block containing the source caret line.
+    /// </summary>
+    public bool EnableScrollSync
+    {
+        get => (bool)GetValue(EnableScrollSyncProperty);
+        set => SetValue(EnableScrollSyncProperty, value);
+    }
+
+    /// <summary>
+    /// When true, the preview block containing the source caret line is highlighted.
+    /// </summary>
+    public bool HighlightActiveBlock
+    {
+        get => (bool)GetValue(HighlightActiveBlockProperty);
+        set => SetValue(HighlightActiveBlockProperty, value);
+    }
+
     public event EventHandler<MarkdownChangedEventArgs>? MarkdownChanged;
+
+    /// <summary>
+    /// Raised on the UI thread after a preview render completes. The event carries the
+    /// parsed AST so consumers can reuse it instead of re-parsing the Markdown.
+    /// </summary>
+    public event EventHandler<PreviewRenderedEventArgs>? PreviewRendered;
 
     #endregion
 
     public MarkdownEditor()
     {
         InitializeComponent();
-        _viewportController = new PreviewViewportController(PreviewViewer, EditorTextBox);
+        _viewportController = new PreviewViewportController(
+            PreviewViewer,
+            EditorTextBox,
+            () => Theme,
+            GoToLine)
+        {
+            EnableScrollSync = EnableScrollSync,
+            HighlightActiveBlock = HighlightActiveBlock,
+        };
         _previewController = new PreviewRenderController(
             PreviewViewer,
             () => Markdown,
             () => Theme,
             GetDocumentBaseDirectory,
-            _viewportController);
+            _viewportController,
+            args => PreviewRendered?.Invoke(this, args));
         _imagePasteService = new ImagePasteService(GetDocumentBaseDirectory);
         _smartEditing = new SmartEditingController(EditorTextBox, ApplyTextOperation);
 
@@ -144,6 +192,26 @@ public partial class MarkdownEditor : UserControl, IDisposable
     public void ApplyTheme(EditorTheme theme) => Theme = theme;
 
     public void FocusEditor() => EditorTextBox.Focus();
+
+    /// <summary>
+    /// Places the caret on the requested 1-based source line and scrolls it into view.
+    /// </summary>
+    public void GoToLine(int line)
+    {
+        if (line < 1) line = 1;
+
+        var lineCount = EditorTextBox.LineCount;
+        if (lineCount > 0 && line > lineCount)
+            line = lineCount;
+
+        var index = EditorTextBox.GetCharacterIndexFromLineIndex(line - 1);
+        if (index < 0)
+            index = EditorTextBox.Text.Length;
+
+        EditorTextBox.Select(index, 0);
+        EditorTextBox.ScrollToLine(line - 1);
+        EditorTextBox.Focus();
+    }
 
     public TextBox TextBox => EditorTextBox;
 
@@ -358,6 +426,14 @@ public partial class MarkdownEditor : UserControl, IDisposable
     {
         var editor = (MarkdownEditor)d;
         editor._previewController.OnDocumentPathChanged();
+    }
+
+    private static void OnViewportOptionsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var editor = (MarkdownEditor)d;
+        editor._viewportController.EnableScrollSync = editor.EnableScrollSync;
+        editor._viewportController.HighlightActiveBlock = editor.HighlightActiveBlock;
+        editor._viewportController.Refresh();
     }
 
     private void OnLanguageChanged(object? sender, LanguageChangedEventArgs e)
@@ -632,6 +708,7 @@ public partial class MarkdownEditor : UserControl, IDisposable
                 OnLanguageChanged);
         }
 
+        _viewportController.Dispose();
         _previewController.Dispose();
         GC.SuppressFinalize(this);
     }

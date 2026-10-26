@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -7,12 +6,14 @@ using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using WpfMarkdownEditor.Sample.Models;
 using WpfMarkdownEditor.Sample.Services;
+using WpfMarkdownEditor.Wpf.Controls;
 
 namespace WpfMarkdownEditor.Sample;
 
 public partial class MainWindow
 {
     private SearchResultSet _searchResultSet = SearchResultSet.Empty;
+    private IReadOnlyList<OutlineEntry> _outlineEntries = [];
 
     private void OnPopupItemClick(object sender, RoutedEventArgs e)
     {
@@ -207,7 +208,7 @@ public partial class MainWindow
 
         FilesPanel.Visibility = Visibility.Collapsed;
         OutlinePanel.Visibility = Visibility.Visible;
-        UpdateOutline();
+        RenderOutline();
     }
 
     private void OnTabFiles(object sender, MouseButtonEventArgs e)
@@ -269,50 +270,43 @@ public partial class MainWindow
             _viewModel.MarkDirty();
             UpdateTitle();
         }
-
-        if (OutlinePanel.Visibility == Visibility.Visible)
-            UpdateOutline();
     }
 
-    private void UpdateOutline()
+    private void OnPreviewRendered(object? sender, PreviewRenderedEventArgs e)
+    {
+        _outlineEntries = OutlineBuilder.Build(e.Markdown, e.Blocks);
+        if (OutlinePanel.Visibility == Visibility.Visible)
+            RenderOutline();
+    }
+
+    private void RenderOutline()
     {
         OutlineList.Children.Clear();
 
-        var markdown = Editor.Markdown;
-        if (string.IsNullOrEmpty(markdown))
+        if (_outlineEntries.Count == 0)
         {
             AddEmptyOutlineMessage();
             return;
         }
 
-        var headingRegex = new Regex(@"^(#{1,6})\s+(.+)$", RegexOptions.Multiline);
-        var matches = headingRegex.Matches(markdown);
-
-        if (matches.Count == 0)
+        foreach (var entry in _outlineEntries)
         {
-            AddEmptyOutlineMessage();
-            return;
-        }
-
-        foreach (Match match in matches)
-        {
-            var level = match.Groups[1].Value.Length;
-            var title = match.Groups[2].Value.Trim();
-            var indent = (level - 1) * 12;
-            var fontSize = Math.Max(11, 14 - level);
+            var indent = (entry.Level - 1) * 12;
+            var fontSize = Math.Max(11, 14 - entry.Level);
 
             var btn = new Button
             {
                 Style = (Style)FindResource("SidebarItemStyle"),
                 Content = new TextBlock
                 {
-                    Text = title,
+                    Text = entry.Text,
                     FontFamily = new FontFamily("Segoe UI Variable, Segoe UI"),
                     FontSize = fontSize,
-                    FontWeight = level <= 2 ? FontWeights.SemiBold : FontWeights.Normal,
+                    FontWeight = entry.Level <= 2 ? FontWeights.SemiBold : FontWeights.Normal,
                 },
                 Margin = new Thickness(indent, 0, 0, 0),
             };
+            btn.Click += (_, _) => Editor.GoToLine(entry.Line);
             OutlineList.Children.Add(btn);
         }
     }

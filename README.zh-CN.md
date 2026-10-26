@@ -28,7 +28,8 @@ Quillora 是一个面向 WPF 的 Markdown 写作工作台，用于编辑、预�
 
 ## 功能亮点
 
-- **实时分栏预览** - 左侧编辑 Markdown，右侧防抖渲染预览。
+- **实时分栏预览** - 左侧编辑 Markdown，右侧防抖渲染预览，并按块增量复用未变化的渲染结果。
+- **源文/预览联动** - 预览跟随光标所在块，高亮当前块；点击预览文字可跳到对应源文行。
 - **Quillora 品牌化** - 空文档窗口只显示品牌名，包含新的应用图标和安装器元数据。
 - **文件工作流** - 新建、打开、保存、另存为、打开文件夹、最近文件、快速打开、移动文件、删除文件、属性、在侧栏中显示、导入文本/Markdown、导出 HTML、打印。
 - **工作区侧栏** - 文件树和文档大纲两个标签页，支持动画显示/隐藏。
@@ -117,6 +118,8 @@ Editor.MarkdownChanged += (_, e) =>
 | `Theme` | `EditorTheme` | `Light` | 当前编辑器和预览主题。 |
 | `ShowPreview` | `bool` | `true` | 显示或隐藏预览面板。 |
 | `PreviewWidth` | `GridLength` | `1*` | 预览面板宽度。 |
+| `EnableScrollSync` | `bool` | `true` | 预览滚动跟随光标所在块。 |
+| `HighlightActiveBlock` | `bool` | `true` | 高亮光标所在的预览块。 |
 
 ### 常用方法
 
@@ -126,6 +129,7 @@ Editor.MarkdownChanged += (_, e) =>
 | `SaveFileAsync(string path)` | 保存当前 Markdown 文本。 |
 | `ApplyTheme(EditorTheme theme)` | 应用内置或自定义主题。 |
 | `FocusEditor()` | 聚焦源码编辑器。 |
+| `GoToLine(int line)` | 把光标放到 1-based 源文行并滚动可见。 |
 | `WrapSelection(string before, string after)` | 用 Markdown 标记包裹选区。 |
 | `InsertText(string text)` | 在光标处插入文本。 |
 | `ToggleLinePrefix(string prefix)` | 对当前选区切换标题、引用或列表前缀。 |
@@ -137,6 +141,7 @@ Editor.MarkdownChanged += (_, e) =>
 | 事件 | 说明 |
 |---|---|
 | `MarkdownChanged` | 编辑器文本变化时触发。 |
+| `PreviewRendered` | 预览渲染完成后触发，携带解析后的块 AST。 |
 
 ## 渲染和图片
 

@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using WpfMarkdownEditor.Wpf.Controls;
+using WpfMarkdownEditor.Wpf.Theming;
 using Xunit;
 
 namespace WpfMarkdownEditor.Wpf.Tests.Controls;
@@ -17,7 +18,7 @@ public sealed class PreviewViewportMappingTests
             try
             {
                 textBox.CaretIndex = textBox.Text.Length;
-                var controller = new PreviewViewportController(new FlowDocumentScrollViewer(), textBox);
+                var controller = CreateController(textBox);
 
                 var anchor = controller.CaptureAnchor();
 
@@ -41,7 +42,7 @@ public sealed class PreviewViewportMappingTests
             try
             {
                 textBox.CaretIndex = 0;
-                var controller = new PreviewViewportController(new FlowDocumentScrollViewer(), textBox);
+                var controller = CreateController(textBox);
 
                 var anchor = controller.CaptureAnchor();
 
@@ -54,6 +55,9 @@ public sealed class PreviewViewportMappingTests
             }
         });
     }
+
+    private static PreviewViewportController CreateController(TextBox textBox) =>
+        new(new FlowDocumentScrollViewer(), textBox, () => EditorTheme.Light, _ => { });
 
     private static Window ShowInWindow(UIElement content)
     {

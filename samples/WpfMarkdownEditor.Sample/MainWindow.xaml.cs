@@ -86,6 +86,7 @@ public partial class MainWindow : Window
         };
 
         Editor.MarkdownChanged += OnMarkdownChanged;
+        Editor.PreviewRendered += OnPreviewRendered;
 
         _viewModel.ClearCurrentFile();
         UpdateTitle();

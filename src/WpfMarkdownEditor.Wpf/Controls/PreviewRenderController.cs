@@ -28,6 +28,7 @@ internal sealed class PreviewRenderController : IDisposable
     private readonly Func<EditorTheme> _themeProvider;
     private readonly Func<string> _baseDirectoryProvider;
     private readonly PreviewViewportController? _viewportController;
+    private readonly Action<PreviewRenderedEventArgs>? _onRendered;
 
     private ImageLoader _imageLoader;
     private CachingImageResolver _imageResolver;
@@ -46,13 +47,15 @@ internal sealed class PreviewRenderController : IDisposable
         Func<string> markdownProvider,
         Func<EditorTheme> themeProvider,
         Func<string> baseDirectoryProvider,
-        PreviewViewportController? viewportController = null)
+        PreviewViewportController? viewportController = null,
+        Action<PreviewRenderedEventArgs>? onRendered = null)
     {
         _previewViewer = previewViewer;
         _markdownProvider = markdownProvider;
         _themeProvider = themeProvider;
         _baseDirectoryProvider = baseDirectoryProvider;
         _viewportController = viewportController;
+        _onRendered = onRendered;
         _imageLoader = new ImageLoader(baseDirectoryProvider());
         _imageResolver = new CachingImageResolver(_imageLoader);
 
@@ -200,6 +203,7 @@ internal sealed class PreviewRenderController : IDisposable
             ct.ThrowIfCancellationRequested();
 
             var anchor = _viewportController?.CaptureAnchor();
+            _viewportController?.OnBeforeRender();
             var renderIncrementally = _translatedMarkdown is null;
             var existingDocument = renderIncrementally ? _previewDocument : null;
             if (existingDocument is not null && ReferenceEquals(_previewViewer.Document, existingDocument))
@@ -217,6 +221,20 @@ internal sealed class PreviewRenderController : IDisposable
             _previewViewer.Document = document;
             if (anchor is { } captured)
                 _viewportController?.RestoreAnchor(captured);
+            _viewportController?.OnAfterRender();
+
+            try
+            {
+                _onRendered?.Invoke(new PreviewRenderedEventArgs
+                {
+                    Markdown = markdown,
+                    Blocks = blocks,
+                });
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+            {
+                // A consumer (for example the outline pane) must not break preview rendering.
+            }
 
             _lastRenderDurationMs = (int)stopwatch.ElapsedMilliseconds;
             UpdateDebounceInterval();

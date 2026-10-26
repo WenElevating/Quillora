@@ -1,9 +1,11 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using WpfMarkdownEditor.Wpf.Rendering;
+using WpfMarkdownEditor.Wpf.Theming;
 using WpfBlock = System.Windows.Documents.Block;
 
 namespace WpfMarkdownEditor.Wpf.Controls;
@@ -11,37 +13,64 @@ namespace WpfMarkdownEditor.Wpf.Controls;
 internal readonly record struct PreviewAnchor(int SourceLine);
 
 /// <summary>
-/// Keeps the preview viewport anchored to the source line it was showing before a render.
-/// Phase 2 extends this type with scroll sync, active-block highlight and click-to-source.
+/// Links the source pane and the preview pane: viewport anchoring, source-to-preview
+/// scroll sync, active-block highlight and click-to-source.
 /// </summary>
-internal sealed class PreviewViewportController
+internal sealed class PreviewViewportController : IDisposable
 {
     private readonly FlowDocumentScrollViewer _previewViewer;
     private readonly TextBox _source;
-    private ScrollViewer? _previewScrollViewer;
+    private readonly Func<EditorTheme> _themeProvider;
+    private readonly Action<int> _goToLine;
 
-    public PreviewViewportController(FlowDocumentScrollViewer previewViewer, TextBox source)
+    private ScrollViewer? _previewScrollViewer;
+    private ScrollViewer? _sourceScrollViewer;
+    private WpfBlock? _highlightedBlock;
+    private SolidColorBrush? _highlightBrush;
+    private EditorTheme? _highlightTheme;
+    private bool _syncQueued;
+    private int _pendingSyncLine;
+    private bool _isSyncing;
+
+    public PreviewViewportController(
+        FlowDocumentScrollViewer previewViewer,
+        TextBox source,
+        Func<EditorTheme> themeProvider,
+        Action<int> goToLine)
     {
         _previewViewer = previewViewer;
         _source = source;
+        _themeProvider = themeProvider;
+        _goToLine = goToLine;
+
+        _source.SelectionChanged += OnSourceSelectionChanged;
+        _source.Loaded += OnSourceLoaded;
+        _previewViewer.PreviewMouseLeftButtonUp += OnPreviewMouseLeftButtonUp;
+
+        if (_source.IsLoaded)
+            AttachSourceScrollViewer();
     }
+
+    public bool EnableScrollSync { get; set; } = true;
+
+    public bool HighlightActiveBlock { get; set; } = true;
 
     /// <summary>
     /// Captures the source line that should stay in view after the next render.
-    /// The caret line wins because it is the editing focus; when no caret line is
-    /// available (source pane not laid out yet) the first visible line is used.
     /// </summary>
     public PreviewAnchor? CaptureAnchor()
     {
-        // Reading mode hides the source pane; there is no source caret to anchor to.
         if (_source.ActualWidth <= 0)
             return null;
 
-        var line = _source.GetLineIndexFromCharacterIndex(_source.CaretIndex);
-        if (line < 0)
-            line = _source.GetFirstVisibleLineIndex();
+        var line = GetCaretLine();
+        if (line < 1)
+        {
+            var firstVisible = _source.GetFirstVisibleLineIndex();
+            line = firstVisible < 0 ? 0 : firstVisible + 1;
+        }
 
-        return line < 0 ? null : new PreviewAnchor(line + 1);
+        return line <= 0 ? null : new PreviewAnchor(line);
     }
 
     /// <summary>
@@ -57,7 +86,7 @@ internal sealed class PreviewViewportController
                 if (document is null)
                     return;
 
-                var scrollViewer = GetScrollViewer();
+                var scrollViewer = GetPreviewScrollViewer();
                 if (scrollViewer is null)
                     return;
 
@@ -65,13 +94,211 @@ internal sealed class PreviewViewportController
                 if (block is null)
                     return;
 
-                var rect = block.ContentStart.GetCharacterRect(LogicalDirection.Forward);
-                if (rect.IsEmpty)
-                    return;
-
-                var targetOffset = scrollViewer.VerticalOffset + rect.Top - document.PagePadding.Top;
-                scrollViewer.ScrollToVerticalOffset(Math.Max(0, targetOffset));
+                ScrollBlockToTop(scrollViewer, document, block);
             }));
+    }
+
+    public void OnBeforeRender()
+    {
+        ClearHighlight();
+    }
+
+    public void OnAfterRender()
+    {
+        _highlightedBlock = null;
+        UpdateActiveBlock();
+    }
+
+    /// <summary>
+    /// Re-applies the active-block highlight and current scroll alignment after an option
+    /// change (for example toggling scroll sync).
+    /// </summary>
+    public void Refresh()
+    {
+        UpdateActiveBlock();
+        if (EnableScrollSync)
+            SchedulePreviewSync(GetCaretLine());
+    }
+
+    public void Dispose()
+    {
+        _source.SelectionChanged -= OnSourceSelectionChanged;
+        _source.Loaded -= OnSourceLoaded;
+        _previewViewer.PreviewMouseLeftButtonUp -= OnPreviewMouseLeftButtonUp;
+
+        if (_sourceScrollViewer is not null)
+            _sourceScrollViewer.ScrollChanged -= OnSourceScrollChanged;
+
+        ClearHighlight();
+    }
+
+    private void OnSourceLoaded(object sender, RoutedEventArgs e) => AttachSourceScrollViewer();
+
+    private void AttachSourceScrollViewer()
+    {
+        if (_sourceScrollViewer is not null)
+            return;
+
+        _sourceScrollViewer = FindDescendant<ScrollViewer>(_source);
+        if (_sourceScrollViewer is not null)
+            _sourceScrollViewer.ScrollChanged += OnSourceScrollChanged;
+    }
+
+    private void OnSourceSelectionChanged(object? sender, RoutedEventArgs e)
+    {
+        UpdateActiveBlock();
+        if (EnableScrollSync)
+            SchedulePreviewSync(GetCaretLine());
+    }
+
+    private void OnSourceScrollChanged(object? sender, ScrollChangedEventArgs e)
+    {
+        if (!EnableScrollSync || _isSyncing || Math.Abs(e.VerticalChange) < 0.5)
+            return;
+
+        var firstVisibleLine = _source.GetFirstVisibleLineIndex();
+        if (firstVisibleLine >= 0)
+            SchedulePreviewSync(firstVisibleLine + 1);
+    }
+
+    private void OnPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left)
+            return;
+
+        if (IsHyperlinkSource(e.OriginalSource as DependencyObject))
+            return;
+
+        if (!_previewViewer.Selection.IsEmpty)
+            return;
+
+        var block = FindTopLevelBlock(_previewViewer.Selection.Start);
+        if (block is null || !RenderedBlockMetadata.TryGet(block, out var info))
+            return;
+
+        _goToLine(info.SourceStartLine);
+    }
+
+    private void UpdateActiveBlock()
+    {
+        if (!HighlightActiveBlock)
+        {
+            ClearHighlight();
+            return;
+        }
+
+        var document = _previewViewer.Document;
+        var line = GetCaretLine();
+        if (document is null || line < 1)
+        {
+            ClearHighlight();
+            return;
+        }
+
+        var block = FindBlockForLine(document, line);
+        if (block is null)
+        {
+            ClearHighlight();
+            return;
+        }
+
+        if (ReferenceEquals(block, _highlightedBlock))
+            return;
+
+        ClearHighlight();
+
+        // Blocks rendered with their own background (code, tables, quotes) keep it.
+        if (block.Background is not null)
+            return;
+
+        _highlightedBlock = block;
+        block.Background = GetHighlightBrush();
+    }
+
+    private void ClearHighlight()
+    {
+        if (_highlightedBlock is null)
+            return;
+
+        _highlightedBlock.ClearValue(TextElement.BackgroundProperty);
+        _highlightedBlock = null;
+    }
+
+    private SolidColorBrush GetHighlightBrush()
+    {
+        var theme = _themeProvider();
+        if (_highlightBrush is not null && ReferenceEquals(_highlightTheme, theme))
+            return _highlightBrush;
+
+        var link = theme.LinkColor;
+        var brush = new SolidColorBrush(Color.FromArgb(0x18, link.R, link.G, link.B));
+        brush.Freeze();
+        _highlightBrush = brush;
+        _highlightTheme = theme;
+        return brush;
+    }
+
+    private void SchedulePreviewSync(int line)
+    {
+        if (line < 1 || !EnableScrollSync)
+            return;
+
+        _pendingSyncLine = line;
+        if (_syncQueued)
+            return;
+
+        _syncQueued = true;
+        _previewViewer.Dispatcher.BeginInvoke(
+            DispatcherPriority.Background,
+            new Action(() =>
+            {
+                _syncQueued = false;
+                SyncPreviewToLine(_pendingSyncLine);
+            }));
+    }
+
+    private void SyncPreviewToLine(int line)
+    {
+        if (!EnableScrollSync || _isSyncing)
+            return;
+
+        var document = _previewViewer.Document;
+        var scrollViewer = GetPreviewScrollViewer();
+        if (document is null || scrollViewer is null)
+            return;
+
+        var block = FindBlockForLine(document, line);
+        if (block is null)
+            return;
+
+        _isSyncing = true;
+        try
+        {
+            ScrollBlockToTop(scrollViewer, document, block);
+        }
+        finally
+        {
+            _isSyncing = false;
+        }
+    }
+
+    private static void ScrollBlockToTop(ScrollViewer scrollViewer, FlowDocument document, WpfBlock block)
+    {
+        var rect = block.ContentStart.GetCharacterRect(LogicalDirection.Forward);
+        if (rect.IsEmpty)
+            return;
+
+        var targetOffset = Math.Max(0, scrollViewer.VerticalOffset + rect.Top - document.PagePadding.Top);
+        if (Math.Abs(targetOffset - scrollViewer.VerticalOffset) < 1)
+            return;
+
+        scrollViewer.ScrollToVerticalOffset(targetOffset);
+    }
+
+    private int GetCaretLine()
+    {
+        var line = _source.GetLineIndexFromCharacterIndex(_source.CaretIndex);
+        return line < 0 ? 0 : line + 1;
     }
 
     private static WpfBlock? FindBlockForLine(FlowDocument document, int line)
@@ -98,7 +325,39 @@ internal sealed class PreviewViewportController
         return hasMetadata ? firstFollowingBlock ?? lastMappedBlock : null;
     }
 
-    private ScrollViewer? GetScrollViewer()
+    private static WpfBlock? FindTopLevelBlock(TextPointer position)
+    {
+        var element = position.Paragraph as TextElement;
+        while (element is not null)
+        {
+            if (element.Parent is FlowDocument)
+                return element as WpfBlock;
+
+            element = element.Parent as TextElement;
+        }
+
+        return null;
+    }
+
+    private static bool IsHyperlinkSource(DependencyObject? source)
+    {
+        while (source is not null)
+        {
+            if (source is Hyperlink)
+                return true;
+
+            source = source switch
+            {
+                FrameworkContentElement contentElement => contentElement.Parent,
+                Visual => VisualTreeHelper.GetParent(source),
+                _ => LogicalTreeHelper.GetParent(source),
+            };
+        }
+
+        return false;
+    }
+
+    private ScrollViewer? GetPreviewScrollViewer()
     {
         _previewScrollViewer ??= FindDescendant<ScrollViewer>(_previewViewer);
         return _previewScrollViewer;
