@@ -162,6 +162,31 @@ public sealed class TableSelectionTests
     }
 
     [Fact]
+    public void TableSelection_HidesNativeHighlightAndRestoresItAfterClear()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var (_, controller, window) = RenderTableInWindow(
+                "| A | B |\n| --- | --- |\n| 1 | 2 |");
+            try
+            {
+                var originalOpacity = controller.Cells[0].Editor.SelectionOpacity;
+
+                controller.SelectCells(0, controller.Cells.Count - 1);
+                Assert.All(controller.Cells, cell => Assert.Equal(0, cell.Editor.SelectionOpacity));
+
+                controller.ClearSelection();
+                Assert.All(controller.Cells, cell =>
+                    Assert.Equal(originalOpacity, cell.Editor.SelectionOpacity));
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void SelectFromPoints_FirstCellToLastCell_SelectsEveryCell()
     {
         WpfTestHost.Run(() =>

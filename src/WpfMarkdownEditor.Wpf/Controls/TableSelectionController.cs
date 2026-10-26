@@ -35,6 +35,8 @@ internal sealed class TableSelectionController : IDisposable
     private readonly DispatcherTimer _selectionTimer;
     private readonly Canvas? _selectionOverlay;
     private readonly Brush _selectionOverlayBrush;
+    private readonly Dictionary<TableCellView, Brush?> _nativeSelectionBrushes = [];
+    private readonly Dictionary<TableCellView, double> _nativeSelectionOpacities = [];
 
     private TableCellView? _anchorCell;
     private TextPointer? _anchorPosition;
@@ -64,6 +66,8 @@ internal sealed class TableSelectionController : IDisposable
         foreach (var cell in _cells)
         {
             _cellByEditor[cell.Editor] = cell;
+            _nativeSelectionBrushes[cell] = cell.Editor.SelectionBrush;
+            _nativeSelectionOpacities[cell] = cell.Editor.SelectionOpacity;
             if (VisualTreeHelper.GetParent(cell.Editor) is Border container)
             {
                 _cellByContainer[container] = cell;
@@ -249,6 +253,7 @@ internal sealed class TableSelectionController : IDisposable
 
         _selectedCells.Clear();
         _selectionOverlay?.Children.Clear();
+        RestoreAllNativeSelection();
         _anchorCell = null;
         _anchorPosition = null;
         _caretCell = null;
@@ -552,6 +557,7 @@ internal sealed class TableSelectionController : IDisposable
         {
             var cell = _cells[i];
             targetCells.Add(cell);
+            HideNativeSelection(cell);
 
             // Middle cells are whole-cell selections and are written once. Only
             // the two edge cells can change on every frame.
@@ -579,6 +585,7 @@ internal sealed class TableSelectionController : IDisposable
                 continue;
 
             ClearCellSelection(cell);
+            RestoreNativeSelection(cell);
             _appliedRanges.Remove(cell);
         }
 
@@ -654,6 +661,27 @@ internal sealed class TableSelectionController : IDisposable
         cell.Editor.Selection.Select(start, start);
     }
 
+    private void HideNativeSelection(TableCellView cell)
+    {
+        cell.Editor.SelectionBrush = Brushes.Transparent;
+        cell.Editor.SelectionOpacity = 0;
+    }
+
+    private void RestoreNativeSelection(TableCellView cell)
+    {
+        if (_nativeSelectionBrushes.TryGetValue(cell, out var brush))
+            cell.Editor.SelectionBrush = brush;
+
+        if (_nativeSelectionOpacities.TryGetValue(cell, out var opacity))
+            cell.Editor.SelectionOpacity = opacity;
+    }
+
+    private void RestoreAllNativeSelection()
+    {
+        foreach (var cell in _cells)
+            RestoreNativeSelection(cell);
+    }
+
     private void ClearCellSelections()
     {
         foreach (var cell in _cells)
@@ -662,6 +690,7 @@ internal sealed class TableSelectionController : IDisposable
         _appliedRanges.Clear();
         _selectedCells.Clear();
         _selectionOverlay?.Children.Clear();
+        RestoreAllNativeSelection();
     }
 
     private void Activate()
