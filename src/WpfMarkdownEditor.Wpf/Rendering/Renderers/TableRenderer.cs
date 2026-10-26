@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -55,6 +56,7 @@ public sealed class TableRenderer(
             BorderThickness = new Thickness(1),
             Child = grid,
             HorizontalAlignment = HorizontalAlignment.Stretch,
+            ContextMenu = CreateTableContextMenu(table, cellText: null),
         };
 
         return new BlockUIContainer(border)
@@ -109,6 +111,7 @@ public sealed class TableRenderer(
                 BorderThickness = new Thickness(0, 0, 1, 1),
                 Padding = new Thickness(13, 6, 13, 6),
                 Child = textBlock,
+                ContextMenu = CreateTableContextMenu(table, text),
             };
 
             Grid.SetRow(cell, gridRow);
@@ -121,8 +124,7 @@ public sealed class TableRenderer(
     }
 
     private static int FindFlexibleColumn(TableBlock table, int columnCount)
-    {
-        var flexibleColumn = 0;
+    {        var flexibleColumn = 0;
         var bestLength = -1;
 
         for (var column = 0; column < columnCount; column++)
@@ -142,6 +144,49 @@ public sealed class TableRenderer(
         }
 
         return flexibleColumn;
+    }
+
+    private static ContextMenu CreateTableContextMenu(TableBlock table, string? cellText)
+    {
+        var menu = new ContextMenu();
+
+        if (cellText is not null)
+            menu.Items.Add(CreateMenuItem("Loc.Editor.CopyCell", "Copy cell", () => CopyText(cellText)));
+
+        menu.Items.Add(CreateMenuItem("Loc.Editor.CopyTable", "Copy table", () => CopyText(BuildTableText(table))));
+        return menu;
+    }
+
+    private static MenuItem CreateMenuItem(string resourceKey, string fallback, Action action)
+    {
+        var item = new MenuItem
+        {
+            Header = Application.Current?.TryFindResource(resourceKey) as string ?? fallback,
+        };
+        item.Click += (_, _) => action();
+        return item;
+    }
+
+    private static void CopyText(string text)
+    {
+        try
+        {
+            Clipboard.SetText(text);
+        }
+        catch (COMException)
+        {
+            // Another process owns the clipboard; do not crash the preview.
+        }
+    }
+
+    private static string BuildTableText(TableBlock table)
+    {
+        var lines = new List<string> { FormatRow(table.Headers) };
+        lines.AddRange(table.Rows.Select(FormatRow));
+        return string.Join(Environment.NewLine, lines);
+
+        static string FormatRow(IReadOnlyList<string> cells) =>
+            string.Join("\t", cells.Select(static cell => cell.Replace('\t', ' ').Replace('\r', ' ').Replace('\n', ' ')));
     }
 
     private static TextAlignment GetAlignment(TableBlock table, int column) =>

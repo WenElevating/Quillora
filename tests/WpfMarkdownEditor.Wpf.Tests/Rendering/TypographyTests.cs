@@ -180,6 +180,26 @@ public sealed class TypographyTests
     }
 
     [Fact]
+    public void Table_ExposesCopyContextMenus()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var document = _renderer.Render(_parser.Parse(
+                "| A | B |\n| --- | --- |\n| 1 | 2 |"));
+            var container = Assert.IsType<BlockUIContainer>(document.Blocks.First());
+            var border = Assert.IsType<Border>(container.Child);
+            var grid = Assert.IsType<Grid>(border.Child);
+
+            Assert.NotNull(border.ContextMenu);
+            Assert.Single(border.ContextMenu!.Items);
+
+            var cell = grid.Children.OfType<Border>().First();
+            Assert.NotNull(cell.ContextMenu);
+            Assert.Equal(2, cell.ContextMenu!.Items.Count);
+        });
+    }
+
+    [Fact]
     public void ThematicBreak_UsesFullWidthBorderNotCharacters()
     {
         WpfTestHost.Run(() =>
