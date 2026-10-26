@@ -1,0 +1,110 @@
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Documents;
+using WpfMarkdownEditor.Core.Parsing;
+using WpfMarkdownEditor.Wpf.Controls;
+using WpfMarkdownEditor.Wpf.Rendering;
+using WpfMarkdownEditor.Wpf.Theming;
+using Xunit;
+
+namespace WpfMarkdownEditor.Wpf.Tests.Rendering;
+
+public sealed class TableSelectionTests
+{
+    private readonly MarkdownParser _parser = new();
+    private readonly FlowDocumentRenderer _renderer = new(EditorTheme.GitHub);
+
+    [Fact]
+    public void SelectCells_AcrossRows_SelectsEveryCellAndBuildsTabText()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var (_, controller) = RenderTable("| A | B |\n| --- | --- |\n| 1 | 2 |");
+
+            controller.SelectCells(0, 3);
+
+            Assert.Equal(4, controller.Cells.Count);
+            Assert.All(controller.Cells, cell => Assert.False(cell.Editor.Selection.IsEmpty));
+            Assert.Equal($"A\tB{Environment.NewLine}1\t2", controller.GetSelectionText());
+        });
+    }
+
+    [Fact]
+    public void SelectRange_ReverseDirection_NormalizesRowMajorOrder()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var (_, controller) = RenderTable("| A | B |\n| --- | --- |\n| 1 | 2 |");
+            var cells = controller.Cells;
+            controller.SelectRange(
+                cells[3],
+                cells[3].Editor.Document.ContentEnd,
+                cells[0],
+                cells[0].Editor.Document.ContentStart);
+
+            Assert.Equal($"A\tB{Environment.NewLine}1\t2", controller.GetSelectionText());
+        });
+    }
+
+    [Fact]
+    public void SelectRange_WithinOneCell_KeepsOnlyThatCellSelected()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var (_, controller) = RenderTable("| A | B |\n| --- | --- |\n| 1 | 2 |");
+            var cells = controller.Cells;
+            controller.SelectRange(
+                cells[0],
+                cells[0].Editor.Document.ContentStart,
+                cells[0],
+                cells[0].Editor.Document.ContentEnd);
+
+            Assert.True(cells[0].Editor.Selection.IsEmpty == false);
+            Assert.True(cells[1].Editor.Selection.IsEmpty);
+            Assert.True(cells[2].Editor.Selection.IsEmpty);
+            Assert.True(cells[3].Editor.Selection.IsEmpty);
+            Assert.Equal("A", controller.GetSelectionText());
+        });
+    }
+
+    [Fact]
+    public void ClearSelection_ResetsEveryCellAndText()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var (_, controller) = RenderTable("| A | B |\n| --- | --- |\n| 1 | 2 |");
+            controller.SelectCells(0, 3);
+
+            controller.ClearSelection();
+
+            Assert.False(controller.HasSelection);
+            Assert.Equal(string.Empty, controller.GetSelectionText());
+            Assert.All(controller.Cells, cell => Assert.True(cell.Editor.Selection.IsEmpty));
+        });
+    }
+
+    [Fact]
+    public void Renderer_AttachesControllerToTableBorder()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var (border, controller) = RenderTable("| A | B |\n| --- | --- |\n| 1 | 2 |");
+
+            Assert.Same(controller, border.Tag);
+            Assert.True(TableSelectionController.IsTableSource(controller.Cells[0].Editor));
+
+            var paragraph = Assert.IsType<Paragraph>(
+                controller.Cells[0].Editor.Document.Blocks.First());
+            Assert.True(TableSelectionController.IsTableSource(paragraph));
+        });
+    }
+
+    private (Border Border, TableSelectionController Controller) RenderTable(string markdown)
+    {
+        var document = _renderer.Render(_parser.Parse(markdown));
+        var container = Assert.IsType<BlockUIContainer>(document.Blocks.First());
+        var border = Assert.IsType<Border>(container.Child);
+        var controller = Assert.IsType<TableSelectionController>(border.Tag);
+        return (border, controller);
+    }
+}

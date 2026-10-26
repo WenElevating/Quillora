@@ -132,6 +132,7 @@
     <sys:String x:Key="Loc.Editor.Copy">复制</sys:String>
     <sys:String x:Key="Loc.Editor.CopyCell">复制单元格</sys:String>
     <sys:String x:Key="Loc.Editor.CopyTable">复制表格</sys:String>
+    <sys:String x:Key="Loc.Editor.CopySelection">复制选中内容</sys:String>
     <sys:String x:Key="Loc.Editor.Paste">粘贴</sys:String>
     <sys:String x:Key="Loc.Editor.SelectAll">全选</sys:String>
     <sys:String x:Key="Loc.Editor.MarkdownEditor">Markdown 编辑器</sys:String>

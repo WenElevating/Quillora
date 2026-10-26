@@ -6,6 +6,7 @@ using System.Windows.Media;
 using WpfMarkdownEditor.Core;
 using WpfMarkdownEditor.Core.Parsing;
 using WpfMarkdownEditor.Core.Parsing.Blocks;
+using WpfMarkdownEditor.Wpf.Controls;
 using WpfMarkdownEditor.Wpf.Rendering;
 using WpfMarkdownEditor.Wpf.Theming;
 
@@ -34,6 +35,7 @@ public sealed class TableRenderer(
             return new BlockUIContainer();
 
         var flexibleColumn = FindFlexibleColumn(table, columnCount);
+        var cellViews = new List<TableCellView>();
 
         var grid = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch };
         for (var i = 0; i < columnCount; i++)
@@ -46,9 +48,9 @@ public sealed class TableRenderer(
             });
         }
 
-        AddRow(grid, table, 0, isHeader: true, columnCount, flexibleColumn);
+        AddRow(grid, table, 0, isHeader: true, columnCount, flexibleColumn, cellViews);
         for (var rowIndex = 0; rowIndex < table.Rows.Count; rowIndex++)
-            AddRow(grid, table, rowIndex, isHeader: false, columnCount, flexibleColumn);
+            AddRow(grid, table, rowIndex, isHeader: false, columnCount, flexibleColumn, cellViews);
 
         var border = new Border
         {
@@ -58,6 +60,8 @@ public sealed class TableRenderer(
             HorizontalAlignment = HorizontalAlignment.Stretch,
             ContextMenu = CreateTableContextMenu(table, cellText: null),
         };
+
+        _ = new TableSelectionController(border, cellViews);
 
         return new BlockUIContainer(border)
         {
@@ -71,7 +75,8 @@ public sealed class TableRenderer(
         int rowIndex,
         bool isHeader,
         int columnCount,
-        int flexibleColumn)
+        int flexibleColumn,
+        List<TableCellView> cellViews)
     {
         var row = new RowDefinition { Height = GridLength.Auto };
         grid.RowDefinitions.Add(row);
@@ -156,6 +161,7 @@ public sealed class TableRenderer(
                 cell.Width = EstimateCellWidth(table, column);
             }
 
+            cellViews.Add(new TableCellView(gridRow, column, cellContent));
             grid.Children.Add(cell);
         }
     }

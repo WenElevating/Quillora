@@ -132,6 +132,7 @@
     <sys:String x:Key="Loc.Editor.Copy">Copy</sys:String>
     <sys:String x:Key="Loc.Editor.CopyCell">Copy cell</sys:String>
     <sys:String x:Key="Loc.Editor.CopyTable">Copy table</sys:String>
+    <sys:String x:Key="Loc.Editor.CopySelection">Copy selection</sys:String>
     <sys:String x:Key="Loc.Editor.Paste">Paste</sys:String>
     <sys:String x:Key="Loc.Editor.SelectAll">Select All</sys:String>
     <sys:String x:Key="Loc.Editor.MarkdownEditor">Markdown editor</sys:String>

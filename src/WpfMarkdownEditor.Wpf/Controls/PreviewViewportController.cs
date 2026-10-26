@@ -171,6 +171,11 @@ internal sealed class PreviewViewportController : IDisposable
         if (e.ChangedButton != MouseButton.Left)
             return;
 
+        // Table cells manage their own selection; clicking a table must not jump
+        // the source caret to the table's first line.
+        if (TableSelectionController.IsTableSource(e.OriginalSource as DependencyObject))
+            return;
+
         if (IsHyperlinkSource(e.OriginalSource as DependencyObject))
             return;
 
