@@ -210,6 +210,106 @@ public sealed class MarkdownEditorPreviewTests
         });
     }
 
+    [Fact]
+    public void ScrollSync_TargetAboveViewport_AlignsTargetBlockInsideViewport()
+    {
+        WpfTestHost.Run(() =>
+        {
+            using var editor = new MarkdownEditor();
+            var window = ShowInWindow(editor);
+            try
+            {
+                // One very long source line soft-wraps into a tall block, so the target
+                // paragraph on line 3 sits far below the document top. Document-relative
+                // rects (used by GetCharacterRect for off-screen blocks) then exceed the
+                // viewport height, which keeps this assertion meaningful in both of its
+                // coordinate flavors.
+                var longLine = string.Concat(Enumerable.Repeat("long paragraph word ", 400));
+                var markdown = longLine + "\n\ntarget paragraph\n\n"
+                    + string.Join("\n\n", Enumerable.Range(0, 120).Select(i => $"tail paragraph {i}"));
+                editor.Markdown = markdown;
+                Assert.True(WaitUntil(() => editor.PreviewViewer.Document?.Blocks.Count > 100));
+                window.UpdateLayout();
+
+                var scrollViewer = FindPreviewScrollViewer(editor.PreviewViewer)!;
+                scrollViewer.ScrollToEnd();
+                window.UpdateLayout();
+                Assert.True(scrollViewer.VerticalOffset > 0);
+
+                // Place the caret on source line 3 ("target paragraph"). Display-line
+                // indexes cannot be used here: the long first line wraps into many rows.
+                var targetOffset = editor.TextBox.Text.IndexOf("target paragraph", StringComparison.Ordinal);
+                Assert.True(targetOffset > 0);
+                editor.TextBox.Select(targetOffset, 0);
+
+                Assert.True(WaitUntil(() =>
+                {
+                    var block = FindBlockForLine(editor.PreviewViewer.Document!, 3);
+                    if (block is null)
+                        return false;
+
+                    var rect = block.ContentStart.GetCharacterRect(LogicalDirection.Forward);
+                    return !rect.IsEmpty
+                        && rect.Top >= 0
+                        && rect.Bottom > 0
+                        && rect.Top < scrollViewer.ViewportHeight;
+                }));
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void ScrollSync_TargetJustAboveViewport_AlignsTargetBlockInsideViewport()
+    {
+        WpfTestHost.Run(() =>
+        {
+            using var editor = new MarkdownEditor();
+            var window = ShowInWindow(editor);
+            try
+            {
+                var markdown = "intro\n\ntarget paragraph\n\n"
+                    + string.Join("\n\n", Enumerable.Range(0, 40).Select(i => $"paragraph {i}"));
+                editor.Markdown = markdown;
+                Assert.True(WaitUntil(() => editor.PreviewViewer.Document?.Blocks.Count == 42));
+                window.UpdateLayout();
+
+                var scrollViewer = FindPreviewScrollViewer(editor.PreviewViewer)!;
+                var document = editor.PreviewViewer.Document!;
+                var target = FindBlockForLine(document, 3)!;
+
+                // Park the viewport just below the target block so its bottom edge is
+                // a few pixels above the viewport top: the exact state from the bug
+                // report where the clicked paragraph is not readable in the preview.
+                var targetRect = target.ContentStart.GetCharacterRect(LogicalDirection.Forward);
+                Assert.False(targetRect.IsEmpty);
+                scrollViewer.ScrollToVerticalOffset(targetRect.Bottom + 6);
+                window.UpdateLayout();
+                Assert.True(scrollViewer.VerticalOffset > 0);
+
+                var targetOffset = editor.TextBox.Text.IndexOf("target paragraph", StringComparison.Ordinal);
+                Assert.True(targetOffset > 0);
+                editor.TextBox.Select(targetOffset, 0);
+
+                Assert.True(WaitUntil(() =>
+                {
+                    var rect = target.ContentStart.GetCharacterRect(LogicalDirection.Forward);
+                    return !rect.IsEmpty
+                        && rect.Top >= 0
+                        && rect.Bottom > 0
+                        && rect.Top < scrollViewer.ViewportHeight;
+                }));
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
     private static System.Windows.Documents.Block? FindBlockForLine(
         System.Windows.Documents.FlowDocument document,
         int line)

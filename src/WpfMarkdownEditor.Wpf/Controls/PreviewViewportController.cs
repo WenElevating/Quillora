@@ -65,8 +65,8 @@ internal sealed class PreviewViewportController : IDisposable
         var line = GetCaretLine();
         if (line < 1)
         {
-            var firstVisible = _source.GetFirstVisibleLineIndex();
-            line = firstVisible < 0 ? 0 : firstVisible + 1;
+            var firstVisible = SourceLineMapper.GetFirstVisibleSourceLine(_source);
+            line = firstVisible < 0 ? 0 : firstVisible;
         }
 
         return line <= 0 ? null : new PreviewAnchor(line);
@@ -161,9 +161,9 @@ internal sealed class PreviewViewportController : IDisposable
         if (!EnableScrollSync || _isSyncing || Math.Abs(e.VerticalChange) < 0.5)
             return;
 
-        var firstVisibleLine = _source.GetFirstVisibleLineIndex();
+        var firstVisibleLine = SourceLineMapper.GetFirstVisibleSourceLine(_source);
         if (firstVisibleLine >= 0)
-            SchedulePreviewSync(firstVisibleLine + 1);
+            SchedulePreviewSync(firstVisibleLine);
     }
 
     private void OnPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -306,8 +306,7 @@ internal sealed class PreviewViewportController : IDisposable
 
     private int GetCaretLine()
     {
-        var line = _source.GetLineIndexFromCharacterIndex(_source.CaretIndex);
-        return line < 0 ? 0 : line + 1;
+        return SourceLineMapper.GetSourceLine(_source, _source.CaretIndex);
     }
 
     private static WpfBlock? FindBlockForLine(FlowDocument document, int line)

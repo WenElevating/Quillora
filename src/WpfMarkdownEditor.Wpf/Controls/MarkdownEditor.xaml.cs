@@ -219,16 +219,13 @@ public partial class MarkdownEditor : UserControl, IDisposable
     {
         if (line < 1) line = 1;
 
-        var lineCount = EditorTextBox.LineCount;
-        if (lineCount > 0 && line > lineCount)
+        var lineCount = SourceLineMapper.GetSourceLineCount(EditorTextBox);
+        if (line > lineCount)
             line = lineCount;
 
-        var index = EditorTextBox.GetCharacterIndexFromLineIndex(line - 1);
-        if (index < 0)
-            index = EditorTextBox.Text.Length;
-
+        var index = SourceLineMapper.GetOffsetOfSourceLine(EditorTextBox, line);
         EditorTextBox.Select(index, 0);
-        EditorTextBox.ScrollToLine(line - 1);
+        EditorTextBox.ScrollToLine(EditorTextBox.GetLineIndexFromCharacterIndex(index));
         EditorTextBox.Focus();
     }
 
