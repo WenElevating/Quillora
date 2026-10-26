@@ -113,7 +113,7 @@ public sealed class MarkdownEditorRenderingTests
 
             try
             {
-                var relativePath = MarkdownEditor.SaveClipboardImage(CreateBitmapSource(width: 2, height: 2), root);
+                var relativePath = ImagePasteService.SaveClipboardImage(CreateBitmapSource(width: 2, height: 2), root);
 
                 Assert.NotNull(relativePath);
                 Assert.StartsWith("images/clipboard_", relativePath);
@@ -134,7 +134,7 @@ public sealed class MarkdownEditorRenderingTests
         {
             var imagesDirectory = Path.Combine(AppContext.BaseDirectory, "images");
             Directory.CreateDirectory(imagesDirectory);
-            var relativePath = MarkdownEditor.SaveClipboardImage(
+            var relativePath = ImagePasteService.SaveClipboardImage(
                 CreateBitmapSource(width: 1545, height: 1356),
                 AppContext.BaseDirectory);
             Assert.NotNull(relativePath);
@@ -176,7 +176,7 @@ public sealed class MarkdownEditorRenderingTests
 
             try
             {
-                var relativePath = MarkdownEditor.SaveClipboardImage(CreateTransparentRgbBitmapSource(), root);
+                var relativePath = ImagePasteService.SaveClipboardImage(CreateTransparentRgbBitmapSource(), root);
 
                 Assert.NotNull(relativePath);
                 var fullPath = Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));

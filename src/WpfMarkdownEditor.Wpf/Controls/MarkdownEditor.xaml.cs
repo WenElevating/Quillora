@@ -1,17 +1,8 @@
 using System.IO;
-using System.Text.RegularExpressions;
 using System.Windows;
-using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Threading;
-using WpfMarkdownEditor.Core.Parsing;
-using WpfMarkdownEditor.Wpf.Rendering;
-using WpfMarkdownEditor.Wpf.Services;
-using WpfMarkdownEditor.Wpf.SyntaxHighlighting;
 using WpfMarkdownEditor.Wpf.Theming;
 using WpfMarkdownEditor.Wpf.Localization;
 
@@ -22,18 +13,10 @@ namespace WpfMarkdownEditor.Wpf.Controls;
 /// </summary>
 public partial class MarkdownEditor : UserControl, IDisposable
 {
-    private static readonly object PreviewErrorTag = new();
-
-    private readonly MarkdownParser _parser = new();
-    private readonly DispatcherTimer _debounceTimer;
-    private ImageLoader _imageLoader;
-    private readonly SyntaxHighlighter _highlighter = new();
-    private FlowDocumentRenderer? _renderer;
-    private CancellationTokenSource? _cts;
-    private int _renderVersion;
-    private FlowDocument? _previewDocument;
-    private bool _layoutRefreshQueued;
-    private string? _translatedMarkdown;
+    private readonly PreviewViewportController _viewportController;
+    private readonly PreviewRenderController _previewController;
+    private readonly ImagePasteService _imagePasteService;
+    private readonly SmartEditingController _smartEditing;
     private LocalizationService? _localizationService;
 
     #region DependencyProperties
@@ -114,12 +97,15 @@ public partial class MarkdownEditor : UserControl, IDisposable
     public MarkdownEditor()
     {
         InitializeComponent();
-        _imageLoader = new ImageLoader(AppContext.BaseDirectory);
-        _debounceTimer = new DispatcherTimer(DispatcherPriority.Background)
-        {
-            Interval = TimeSpan.FromMilliseconds(100),
-        };
-        _debounceTimer.Tick += OnDebounceTick;
+        _viewportController = new PreviewViewportController(PreviewViewer, EditorTextBox);
+        _previewController = new PreviewRenderController(
+            PreviewViewer,
+            () => Markdown,
+            () => Theme,
+            GetDocumentBaseDirectory,
+            _viewportController);
+        _imagePasteService = new ImagePasteService(GetDocumentBaseDirectory);
+        _smartEditing = new SmartEditingController(EditorTextBox, ApplyTextOperation);
 
         // Bind standard editing commands to the TextBox
         EditorTextBox.CommandBindings.Add(new CommandBinding(ApplicationCommands.Undo));
@@ -137,8 +123,7 @@ public partial class MarkdownEditor : UserControl, IDisposable
         CommandBindings.Add(new CommandBinding(MarkdownEditorCommands.DeleteSelectionOrCurrentLine, OnDeleteSelectionOrCurrentLineExecuted, OnCanDeleteSelectionOrCurrentLine));
         CommandBindings.Add(new CommandBinding(MarkdownEditorCommands.InsertHardLineBreak, OnInsertHardLineBreakExecuted));
 
-        RefreshAutomationProperties(FallbackStringLocalizer.Instance);
-        UpdateRenderer();
+        EditorLocalizationBinder.Apply(this, FallbackStringLocalizer.Instance);
     }
 
     #region Methods
@@ -184,12 +169,7 @@ public partial class MarkdownEditor : UserControl, IDisposable
         if (!ShowPreview)
             return false;
 
-        var candidate = PreviewViewer.Document;
-        if (candidate is null || candidate.Blocks.Count == 0 || ReferenceEquals(candidate.Tag, PreviewErrorTag))
-            return false;
-
-        document = candidate;
-        return true;
+        return _previewController.TryGetPrintablePreviewDocument(out document);
     }
 
     public FlowDocument CreatePlainTextPrintDocument()
@@ -215,7 +195,7 @@ public partial class MarkdownEditor : UserControl, IDisposable
             nameof(LocalizationService.LanguageChanged),
             OnLanguageChanged);
 
-        RefreshLocalizedText();
+        EditorLocalizationBinder.Apply(this, localizationService);
     }
 
     /// <summary>
@@ -269,8 +249,7 @@ public partial class MarkdownEditor : UserControl, IDisposable
     /// </summary>
     public void RenderTranslatedPreview(string translatedMarkdown)
     {
-        _translatedMarkdown = translatedMarkdown;
-        RenderPreview();
+        _previewController.RenderTranslatedPreview(translatedMarkdown);
     }
 
     /// <summary>
@@ -278,8 +257,7 @@ public partial class MarkdownEditor : UserControl, IDisposable
     /// </summary>
     public void ClearTranslatedPreview()
     {
-        _translatedMarkdown = null;
-        RenderPreview();
+        _previewController.ClearTranslatedPreview();
     }
 
     public void SetHeadingLevel(int level) =>
@@ -360,131 +338,32 @@ public partial class MarkdownEditor : UserControl, IDisposable
     private static void OnMarkdownChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         var editor = (MarkdownEditor)d;
-        editor._translatedMarkdown = null;
         editor.MarkdownChanged?.Invoke(editor, new MarkdownChangedEventArgs
         {
             OldMarkdown = (string?)e.OldValue ?? string.Empty,
             NewMarkdown = (string?)e.NewValue ?? string.Empty,
         });
-        editor.SchedulePreviewRender();
+        editor._previewController.OnMarkdownChanged();
     }
 
     private static void OnThemeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         var editor = (MarkdownEditor)d;
         var theme = (EditorTheme)e.NewValue;
-        editor.UpdateRenderer();
-        editor.RenderPreview();
-
-        // Editor pane colors — use softer foreground for readability
-        editor.EditorTextBox.Background = Frozen(theme.BackgroundColor);
-        editor.EditorTextBox.Foreground = Frozen(theme.EditorForegroundColor);
-        editor.EditorTextBox.CaretBrush = Frozen(theme.EditorCaretColor);
-        editor.EditorTextBox.FontWeight = theme.EditorFontWeight;
-        editor.EditorSplitter.Background = Frozen(theme.ThematicBreakColor);
-
-        // Preview pane colors
-        editor.PreviewViewer.Background = Frozen(theme.BackgroundColor);
-
-        // Toolbar theme brushes
-        var lum = 0.299 * theme.BackgroundColor.R + 0.587 * theme.BackgroundColor.G + 0.114 * theme.BackgroundColor.B;
-        var isDark = lum < 128;
-        editor.Resources["ToolbarBackground"] = Frozen(
-            isDark ? Color.FromRgb(0x16, 0x1b, 0x22) : Color.FromRgb(0xf6, 0xf8, 0xfa));
-        editor.Resources["ToolbarBorder"] = Frozen(
-            isDark ? Color.FromRgb(0x30, 0x36, 0x3d) : Color.FromRgb(0xd0, 0xd7, 0xde));
-        editor.Resources["ToolbarForeground"] = Frozen(
-            isDark ? Color.FromRgb(0xe6, 0xed, 0xf3) : Color.FromRgb(0x24, 0x29, 0x2f));
-        editor.Resources["ToolbarHoverBackground"] = Frozen(
-            isDark ? Color.FromArgb(0x28, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x18, 0x00, 0x00, 0x00));
-        editor.Resources["ToolbarPressedBackground"] = Frozen(
-            isDark ? Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x28, 0x00, 0x00, 0x00));
-        editor.Resources["ToolbarAccent"] = Frozen(
-            isDark ? Color.FromRgb(0x58, 0xa6, 0xff) : Color.FromRgb(0x09, 0x69, 0xda));
-
-        // Toolbar border & separator
-        editor.PreviewToolbarBorder.BorderBrush = Frozen(
-            isDark ? Color.FromRgb(0x30, 0x36, 0x3d) : Color.FromRgb(0xd0, 0xd7, 0xde));
-        editor.PreviewToolbarBorder.Background = Frozen(
-            isDark ? Color.FromRgb(0x16, 0x1b, 0x22) : Color.FromRgb(0xf6, 0xf8, 0xfa));
-        editor.ToolBarSeparator.Background = Frozen(
-            isDark ? Color.FromRgb(0x30, 0x36, 0x3d) : Color.FromRgb(0xd0, 0xd7, 0xde));
-        editor.ZoomText.Foreground = Frozen(
-            isDark ? Color.FromRgb(0x8b, 0x94, 0x9e) : Color.FromRgb(0x65, 0x6d, 0x76));
-
-        // Context menu theme
-        editor.Resources["MenuBackground"] = Frozen(
-            isDark ? Color.FromRgb(0x2d, 0x2d, 0x2d) : Color.FromRgb(0xff, 0xff, 0xff));
-        editor.Resources["MenuBorder"] = Frozen(
-            isDark ? Color.FromRgb(0x3d, 0x3d, 0x3d) : Color.FromRgb(0xe5, 0xe5, 0xe5));
-        editor.Resources["MenuForeground"] = Frozen(
-            isDark ? Color.FromRgb(0xff, 0xff, 0xff) : Color.FromRgb(0x1a, 0x1a, 0x1a));
-        editor.Resources["MenuHoverBackground"] = Frozen(
-            isDark ? Color.FromRgb(0x38, 0x38, 0x38) : Color.FromRgb(0xf5, 0xf5, 0xf5));
-        editor.Resources["MenuSeparator"] = Frozen(
-            isDark ? Color.FromRgb(0x3d, 0x3d, 0x3d) : Color.FromRgb(0xe5, 0xe5, 0xe5));
-        editor.Resources["MenuDisabledForeground"] = Frozen(
-            isDark ? Color.FromRgb(0x66, 0x66, 0x66) : Color.FromRgb(0xb0, 0xb0, 0xb0));
+        editor._previewController.OnThemeChanged();
+        EditorChromeTheme.Apply(editor, theme);
     }
 
     private static void OnDocumentPathChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         var editor = (MarkdownEditor)d;
-        editor.UpdateImageLoaderBaseDirectory();
-        editor.UpdateRenderer();
-        editor.SchedulePreviewRender();
+        editor._previewController.OnDocumentPathChanged();
     }
 
-    private static SolidColorBrush Frozen(Color color)
+    private void OnLanguageChanged(object? sender, LanguageChangedEventArgs e)
     {
-        var brush = new SolidColorBrush(color);
-        brush.Freeze();
-        return brush;
-    }
-
-    private void OnLanguageChanged(object? sender, LanguageChangedEventArgs e) => RefreshLocalizedText();
-
-    private void RefreshLocalizedText()
-    {
-        if (_localizationService == null)
-            return;
-
-        UndoMenuItem.Header = _localizationService.GetString("Editor.Undo");
-        RedoMenuItem.Header = _localizationService.GetString("Editor.Redo");
-        CutMenuItem.Header = _localizationService.GetString("Editor.Cut");
-        CopyMenuItem.Header = _localizationService.GetString("Editor.Copy");
-        PasteMenuItem.Header = _localizationService.GetString("Editor.Paste");
-        SelectAllMenuItem.Header = _localizationService.GetString("Editor.SelectAll");
-        ZoomOutBtn.ToolTip = _localizationService.GetString("Editor.ZoomOut");
-        ZoomInBtn.ToolTip = _localizationService.GetString("Editor.ZoomIn");
-        ZoomResetBtn.ToolTip = _localizationService.GetString("Editor.ResetZoom");
-        RefreshAutomationProperties(_localizationService);
-    }
-
-    private void RefreshAutomationProperties(IStringLocalizer localizer)
-    {
-        AutomationProperties.SetName(this, localizer.GetString("Editor.MarkdownEditor"));
-        AutomationProperties.SetName(EditorTextBox, localizer.GetString("Editor.MarkdownSource"));
-        AutomationProperties.SetName(EditorSplitter, localizer.GetString("Editor.Splitter"));
-        AutomationProperties.SetName(PreviewViewer, localizer.GetString("Editor.Preview"));
-        AutomationProperties.SetName(ZoomOutBtn, localizer.GetString("Editor.ZoomOut"));
-        AutomationProperties.SetName(ZoomSlider, localizer.GetString("Editor.ZoomLevel"));
-        AutomationProperties.SetName(ZoomText, localizer.GetString("Editor.ZoomLevel"));
-        AutomationProperties.SetName(ZoomInBtn, localizer.GetString("Editor.ZoomIn"));
-        AutomationProperties.SetName(ZoomResetBtn, localizer.GetString("Editor.ResetZoom"));
-    }
-
-    private void UpdateRenderer()
-    {
-        _previewDocument = null;
-        _renderer = new FlowDocumentRenderer(Theme, _imageLoader, _highlighter, RequestPreviewLayoutRefresh);
-    }
-
-    private void UpdateImageLoaderBaseDirectory()
-    {
-        var previous = _imageLoader;
-        _imageLoader = new ImageLoader(GetDocumentBaseDirectory());
-        previous.Dispose();
+        if (_localizationService is not null)
+            EditorLocalizationBinder.Apply(this, _localizationService);
     }
 
     private string GetDocumentBaseDirectory()
@@ -505,104 +384,7 @@ public partial class MarkdownEditor : UserControl, IDisposable
 
     private void OnEditorTextChanged(object sender, TextChangedEventArgs e)
     {
-        _translatedMarkdown = null;
-        SchedulePreviewRender();
-    }
-
-    private void OnDebounceTick(object? sender, EventArgs e)
-    {
-        _debounceTimer.Stop();
-        RenderPreview();
-    }
-
-    private async void RenderPreview()
-    {
-        var version = Interlocked.Increment(ref _renderVersion);
-        var oldCts = SwapCts();
-        oldCts?.Cancel();
-        oldCts?.Dispose();
-        var ct = _cts!.Token;
-
-        try
-        {
-            var markdown = _translatedMarkdown ?? Markdown;
-            var renderer = _renderer;
-            if (renderer is null) return;
-
-            var blocks = await Task.Run(() => _parser.Parse(markdown), ct);
-
-            // Version check — discard stale results
-            if (version != Volatile.Read(ref _renderVersion)) return;
-            ct.ThrowIfCancellationRequested();
-
-            var renderIncrementally = _translatedMarkdown is null;
-            var existingDocument = renderIncrementally ? _previewDocument : null;
-            if (existingDocument is not null && ReferenceEquals(PreviewViewer.Document, existingDocument))
-                PreviewViewer.Document = null;
-
-            var document = renderIncrementally
-                ? renderer.RenderIncremental(existingDocument, blocks, markdown)
-                : renderer.Render(blocks);
-
-            // Final version check before UI update
-            if (version != Volatile.Read(ref _renderVersion)) return;
-
-            _previewDocument = document;
-            PreviewViewer.Document = document;
-        }
-        catch (OperationCanceledException)
-        {
-            // Newer render superseded this one
-        }
-        catch (Exception)
-        {
-            _previewDocument = BuildErrorDocument("Preview unavailable");
-            PreviewViewer.Document = _previewDocument;
-        }
-    }
-
-    private void SchedulePreviewRender()
-    {
-        _debounceTimer.Stop();
-        var oldCts = SwapCts();
-        oldCts?.Cancel();
-        oldCts?.Dispose();
-        _debounceTimer.Start();
-    }
-
-    private void RequestPreviewLayoutRefresh()
-    {
-        if (_layoutRefreshQueued)
-            return;
-
-        _layoutRefreshQueued = true;
-        PreviewViewer.Dispatcher.BeginInvoke(
-            DispatcherPriority.Render,
-            new Action(() =>
-            {
-                _layoutRefreshQueued = false;
-                var document = PreviewViewer.Document;
-                PreviewViewer.InvalidateMeasure();
-                PreviewViewer.InvalidateArrange();
-                PreviewViewer.InvalidateVisual();
-                PreviewViewer.UpdateLayout();
-            }));
-    }
-
-    private static FlowDocument BuildErrorDocument(string message)
-    {
-        var doc = new FlowDocument { Tag = PreviewErrorTag };
-        doc.Blocks.Add(new Paragraph(new Run(message)) { FontStyle = FontStyles.Italic });
-        return doc;
-    }
-
-    /// <summary>
-    /// Atomically swap the CancellationTokenSource with a new one. Returns the old CTS for disposal.
-    /// </summary>
-    private CancellationTokenSource? SwapCts()
-    {
-        var newCts = new CancellationTokenSource();
-        return Interlocked.Exchange(ref _cts, newCts);
+        _previewController.OnMarkdownChanged();
     }
 
     #region Paste Image Path
@@ -611,7 +393,7 @@ public partial class MarkdownEditor : UserControl, IDisposable
     {
         var textBox = EditorTextBox;
 
-        if (TryPasteImageFromClipboard())
+        if (TryPasteImage())
         {
             e.Handled = true;
             return;
@@ -635,13 +417,13 @@ public partial class MarkdownEditor : UserControl, IDisposable
 
     private void OnCanPasteImage(object sender, CanExecuteRoutedEventArgs e)
     {
-        e.CanExecute = ClipboardHasImageSource();
+        e.CanExecute = _imagePasteService.CanPasteImage();
         e.Handled = true;
     }
 
     private void OnPasteImageExecuted(object sender, ExecutedRoutedEventArgs e)
     {
-        e.Handled = TryPasteImageFromClipboard();
+        e.Handled = TryPasteImage();
     }
 
     private void OnCanCopyPlainText(object sender, CanExecuteRoutedEventArgs e)
@@ -800,311 +582,43 @@ public partial class MarkdownEditor : UserControl, IDisposable
         }
     }
 
-    private static bool ClipboardHasImageSource()
+    private bool TryPasteImage()
     {
-        try
-        {
-            if (Clipboard.ContainsImage())
-                return true;
-
-            if (!Clipboard.ContainsFileDropList())
-                return false;
-
-            var files = Clipboard.GetFileDropList();
-            return files.Cast<string?>().Any(IsSupportedImagePath);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+        if (!_imagePasteService.TryPasteImage(
+                EditorTextBox.Text,
+                EditorTextBox.SelectionStart,
+                EditorTextBox.SelectionLength,
+                ApplyTextOperation))
         {
             return false;
         }
-    }
 
-    private bool TryPasteImageFromClipboard()
-    {
-        // Priority 1: Clipboard image (screenshot, copied image)
-        if (Clipboard.ContainsImage())
-        {
-            var imageSource = Clipboard.GetImage();
-            if (imageSource != null)
-            {
-                var imagePath = SaveClipboardImage(imageSource, GetDocumentBaseDirectory());
-                if (imagePath != null)
-                {
-                    InsertImageMarkdown(CreateImageMarkdown(imagePath));
-                    return true;
-                }
-            }
-        }
-
-        // Priority 2: File drop list (copied image file from Explorer)
-        if (Clipboard.ContainsFileDropList())
-        {
-            var files = Clipboard.GetFileDropList();
-            foreach (string? file in files)
-            {
-                if (IsSupportedImagePath(file))
-                {
-                    InsertImageMarkdown(CreateImageMarkdown(file!));
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    private void InsertImageMarkdown(string markdown)
-    {
-        var operation = EditorTextOperations.InsertImageBlock(
-            EditorTextBox.Text,
-            EditorTextBox.SelectionStart,
-            EditorTextBox.SelectionLength,
-            markdown);
-        ApplyTextOperation(operation);
-        UpdateRenderer();
-        RenderPreview();
-    }
-
-    private static bool IsSupportedImagePath(string? file)
-    {
-        if (file == null) return false;
-        var ext = System.IO.Path.GetExtension(file).ToLowerInvariant();
-        return ext is ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".webp" or ".svg";
-    }
-
-    private static string CreateImageMarkdown(string imagePath)
-    {
-        var fileName = System.IO.Path.GetFileName(imagePath);
-        var altText = EscapeImageAltText(fileName);
-        var destination = FormatMarkdownImageDestination(imagePath);
-        return $"![{altText}]({destination})";
-    }
-
-    private static string EscapeImageAltText(string value) =>
-        value.Replace("\\", "\\\\")
-            .Replace("[", "\\[")
-            .Replace("]", "\\]");
-
-    private static string FormatMarkdownImageDestination(string imagePath)
-    {
-        var normalized = imagePath.Replace('\\', '/')
-            .Replace("<", "%3C")
-            .Replace(">", "%3E");
-
-        return normalized.Any(c => char.IsWhiteSpace(c) || c is '(' or ')')
-            ? $"<{normalized}>"
-            : normalized;
-    }
-
-    internal static string? SaveClipboardImage(BitmapSource image, string baseDirectory)
-    {
-        try
-        {
-            var imagesDir = System.IO.Path.Combine(baseDirectory, "images");
-            Directory.CreateDirectory(imagesDir);
-
-            var fileName = $"clipboard_{DateTime.Now:yyyyMMdd_HHmmss}.png";
-            var filePath = System.IO.Path.Combine(imagesDir, fileName);
-
-            var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(EnsureVisibleClipboardImage(image)));
-
-            using var stream = System.IO.File.Create(filePath);
-            encoder.Save(stream);
-
-            return $"images/{fileName}";
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
-        {
-            return null;
-        }
-    }
-
-    private static BitmapSource EnsureVisibleClipboardImage(BitmapSource image)
-    {
-        var converted = new FormatConvertedBitmap(image, PixelFormats.Bgra32, null, 0);
-        var stride = converted.PixelWidth * 4;
-        var pixels = new byte[stride * converted.PixelHeight];
-        converted.CopyPixels(pixels, stride, 0);
-
-        var alphaNonZero = false;
-        var rgbNonZero = false;
-        for (var i = 0; i < pixels.Length; i += 4)
-        {
-            if (pixels[i + 3] != 0)
-                alphaNonZero = true;
-
-            if (pixels[i] != 0 || pixels[i + 1] != 0 || pixels[i + 2] != 0)
-                rgbNonZero = true;
-
-            if (alphaNonZero)
-                return image;
-        }
-
-        if (!rgbNonZero)
-            return image;
-
-        for (var i = 3; i < pixels.Length; i += 4)
-            pixels[i] = 255;
-
-        var visible = BitmapSource.Create(
-            converted.PixelWidth,
-            converted.PixelHeight,
-            converted.DpiX,
-            converted.DpiY,
-            PixelFormats.Bgra32,
-            null,
-            pixels,
-            stride);
-        visible.Freeze();
-        return visible;
+        _previewController.RenderNow();
+        return true;
     }
 
     #endregion
 
     #region Zoom Controls
 
-    private void OnZoomOut(object sender, RoutedEventArgs e)
-    {
-        PreviewViewer.DecreaseZoom();
-        SyncZoomUI();
-    }
+    private void OnZoomOut(object sender, RoutedEventArgs e) => EditorZoom.ZoomOut(this);
 
-    private void OnZoomIn(object sender, RoutedEventArgs e)
-    {
-        PreviewViewer.IncreaseZoom();
-        SyncZoomUI();
-    }
+    private void OnZoomIn(object sender, RoutedEventArgs e) => EditorZoom.ZoomIn(this);
 
-    private void OnZoomReset(object sender, RoutedEventArgs e)
-    {
-        PreviewViewer.Zoom = 100;
-        SyncZoomUI();
-    }
+    private void OnZoomReset(object sender, RoutedEventArgs e) => EditorZoom.Reset(this);
 
     private void OnZoomSliderChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (PreviewViewer == null || ZoomText == null) return;
-        PreviewViewer.Zoom = e.NewValue;
-        ZoomText.Text = $"{(int)e.NewValue}%";
-    }
-
-    private void SyncZoomUI()
-    {
-        var zoom = PreviewViewer.Zoom;
-        ZoomSlider.Value = zoom;
-        ZoomText.Text = $"{(int)zoom}%";
+        EditorZoom.SetZoom(this, e.NewValue);
     }
 
     #endregion
 
     #region Smart List Editing
 
-    private static readonly Regex ListMarkerRegex = new(@"^(\s*)([-*+]|\d+\.)\s", RegexOptions.Compiled);
-    private const int IndentSize = 2;
-
-    private void OnEditorPreviewKeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter)
-            HandleSmartEnter(e);
-        else if (e.Key == Key.Tab)
-            HandleSmartTab(e);
-    }
-
-    private void HandleSmartEnter(KeyEventArgs e)
-    {
-        var textBox = EditorTextBox;
-        var caretIndex = textBox.CaretIndex;
-        var text = textBox.Text;
-
-        var lineStart = text.LastIndexOf('\n', Math.Max(0, caretIndex - 1)) + 1;
-        var lineEnd = text.IndexOf('\n', caretIndex);
-        if (lineEnd < 0) lineEnd = text.Length;
-        var lineText = text.Substring(lineStart, lineEnd - lineStart).TrimEnd('\r');
-
-        var match = ListMarkerRegex.Match(lineText);
-        if (!match.Success)
-            return; // Not a list item — let default Enter handle it
-
-        var indent = match.Groups[1].Value;
-        var marker = match.Groups[2].Value;
-        var markerEnd = match.Index + match.Length;
-
-        // Only auto-continue if cursor is after the marker
-        if (caretIndex < lineStart + markerEnd)
-            return;
-
-        e.Handled = true;
-
-        var contentAfterMarker = lineText.Substring(markerEnd);
-        if (string.IsNullOrWhiteSpace(contentAfterMarker))
-        {
-            // Empty list item — clear marker, insert plain newline
-            textBox.Select(lineStart + indent.Length, lineText.Length - indent.Length);
-            textBox.SelectedText = "";
-            var insertPos = lineStart + indent.Length;
-            textBox.Select(insertPos, 0);
-            textBox.SelectedText = Environment.NewLine;
-            textBox.CaretIndex = insertPos + Environment.NewLine.Length;
-        }
-        else
-        {
-            // Non-empty — insert newline with list marker at cursor
-            var nextMarker = GetNextMarker(marker);
-            var insertion = Environment.NewLine + indent + nextMarker + " ";
-            textBox.Select(caretIndex, 0);
-            textBox.SelectedText = insertion;
-            textBox.CaretIndex = caretIndex + insertion.Length;
-        }
-    }
-
-    private void HandleSmartTab(KeyEventArgs e)
-    {
-        var textBox = EditorTextBox;
-        var text = textBox.Text;
-        var caretIndex = textBox.CaretIndex;
-
-        var lineStart = text.LastIndexOf('\n', Math.Max(0, caretIndex - 1)) + 1;
-        var lineEnd = text.IndexOf('\n', caretIndex);
-        if (lineEnd < 0) lineEnd = text.Length;
-        var lineText = text.Substring(lineStart, lineEnd - lineStart).TrimEnd('\r');
-
-        // Only intercept Tab for list item lines
-        if (!ListMarkerRegex.IsMatch(lineText))
-            return; // Let default Tab behavior (AcceptsTab handles it)
-
-        e.Handled = true;
-
-        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
-        {
-            // Outdent: remove up to IndentSize spaces from line start
-            var leadingSpaces = lineText.Length - lineText.TrimStart(' ').Length;
-            var spacesToRemove = Math.Min(IndentSize, leadingSpaces);
-            if (spacesToRemove > 0)
-            {
-                textBox.Select(lineStart, spacesToRemove);
-                textBox.SelectedText = "";
-                textBox.CaretIndex = caretIndex > lineStart + spacesToRemove
-                    ? caretIndex - spacesToRemove
-                    : lineStart;
-            }
-        }
-        else
-        {
-            // Indent: insert spaces at line start
-            var spaces = new string(' ', IndentSize);
-            textBox.Select(lineStart, 0);
-            textBox.SelectedText = spaces;
-            textBox.CaretIndex = caretIndex + IndentSize;
-        }
-    }
-
-    private static string GetNextMarker(string currentMarker)
-    {
-        if (int.TryParse(currentMarker[..^1], out var number))
-            return $"{number + 1}.";
-        return currentMarker; // Unordered: keep same marker (-, *, +)
-    }
+    private void OnEditorPreviewKeyDown(object sender, KeyEventArgs e) =>
+        _smartEditing.HandlePreviewKeyDown(e);
 
     #endregion
 
@@ -1118,11 +632,7 @@ public partial class MarkdownEditor : UserControl, IDisposable
                 OnLanguageChanged);
         }
 
-        _imageLoader.Dispose();
-        _debounceTimer.Stop();
-        var oldCts = Interlocked.Exchange(ref _cts, null);
-        oldCts?.Cancel();
-        oldCts?.Dispose();
+        _previewController.Dispose();
         GC.SuppressFinalize(this);
     }
 

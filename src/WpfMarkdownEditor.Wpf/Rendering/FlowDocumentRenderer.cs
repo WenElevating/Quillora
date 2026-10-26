@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Media;
@@ -7,21 +8,17 @@ using WpfMarkdownEditor.Wpf.Rendering.Renderers;
 using WpfMarkdownEditor.Wpf.SyntaxHighlighting;
 using WpfMarkdownEditor.Wpf.Theming;
 using CoreBlock = WpfMarkdownEditor.Core.Parsing.Block;
+using WpfBlock = System.Windows.Documents.Block;
 
 namespace WpfMarkdownEditor.Wpf.Rendering;
+
+internal readonly record struct PreviewRenderStats(int Reused, int Rebuilt, int Removed, long ElapsedMilliseconds);
 
 /// <summary>
 /// Renders Block AST to WPF FlowDocument.
 /// </summary>
 public sealed class FlowDocumentRenderer
 {
-    private static readonly DependencyProperty BlockSignatureProperty =
-        DependencyProperty.RegisterAttached(
-            "BlockSignature",
-            typeof(string),
-            typeof(FlowDocumentRenderer),
-            new PropertyMetadata(null));
-
     private readonly Dictionary<Type, IBlockRenderer> _renderers;
     private readonly EditorTheme _theme;
     private readonly SolidColorBrush _backgroundBrush;
@@ -42,7 +39,9 @@ public sealed class FlowDocumentRenderer
         _backgroundBrush.Freeze();
         _foregroundBrush = new SolidColorBrush(theme.ForegroundColor);
         _foregroundBrush.Freeze();
-        var cachedImageResolver = imageResolver is null ? null : new CachingImageResolver(imageResolver);
+        var cachedImageResolver = imageResolver is null
+            ? null
+            : imageResolver as CachingImageResolver ?? new CachingImageResolver(imageResolver);
         _renderers = new()
         {
             [typeof(HeadingBlock)] = new HeadingRenderer(theme, cachedImageResolver, requestLayoutRefresh),
@@ -57,6 +56,11 @@ public sealed class FlowDocumentRenderer
         // BlockquoteRenderer references the parent — must be added after dictionary is built
         _renderers[typeof(BlockquoteBlock)] = new BlockquoteRenderer(theme, this);
     }
+
+    /// <summary>
+    /// Statistics for the most recent <see cref="RenderIncremental(FlowDocument?, IReadOnlyList{CoreBlock}, string)"/> call.
+    /// </summary>
+    internal PreviewRenderStats LastRenderStats { get; private set; }
 
     /// <summary>
     /// Render blocks to FlowDocument.
@@ -80,46 +84,209 @@ public sealed class FlowDocumentRenderer
     /// </summary>
     public FlowDocument RenderIncremental(FlowDocument? document, IReadOnlyList<CoreBlock> blocks, string markdown)
     {
-        document ??= CreateDocument();
+        var index = SourceLineIndex.Create(markdown);
+        var signatures = BlockSignatureFactory.Create(blocks, index);
+        return RenderIncremental(document, blocks, index, signatures);
+    }
+
+    /// <summary>
+    /// Incremental rendering with a precomputed source index and block signatures.
+    /// The controller computes these on a background thread so the UI thread only diffs
+    /// and creates the elements that actually changed.
+    /// </summary>
+    internal FlowDocument RenderIncremental(
+        FlowDocument? document,
+        IReadOnlyList<CoreBlock> blocks,
+        SourceLineIndex index,
+        IReadOnlyList<BlockSignature> signatures)
+    {
+        var stopwatch = Stopwatch.StartNew();
+
+        if (document is null)
+        {
+            document = CreateDocument();
+            var renderedCount = RenderAll(document, blocks, signatures);
+            LastRenderStats = new PreviewRenderStats(0, renderedCount, 0, stopwatch.ElapsedMilliseconds);
+            return document;
+        }
+
         ApplyDocumentStyle(document);
 
-        var existingBlocks = document.Blocks.Cast<System.Windows.Documents.Block>().ToList();
-        var reusableBlocks = existingBlocks
-            .Select(block => new { Block = block, Signature = GetBlockSignature(block) })
-            .Where(item => item.Signature is not null)
-            .GroupBy(item => item.Signature!, item => item.Block)
-            .ToDictionary(group => group.Key, group => new Queue<System.Windows.Documents.Block>(group), StringComparer.Ordinal);
-
-        var targetBlocks = new List<System.Windows.Documents.Block>(blocks.Count);
-        foreach (var block in blocks)
+        var existingBlocks = document.Blocks.Cast<WpfBlock>().ToList();
+        if (existingBlocks.Count == 0)
         {
-            var signature = CreateBlockSignature(block, markdown);
-            if (reusableBlocks.TryGetValue(signature, out var queue) && queue.Count > 0)
+            var renderedCount = RenderAll(document, blocks, signatures);
+            LastRenderStats = new PreviewRenderStats(0, renderedCount, 0, stopwatch.ElapsedMilliseconds);
+            return document;
+        }
+
+        var oldInfos = new RenderedBlockInfo[existingBlocks.Count];
+        for (var i = 0; i < existingBlocks.Count; i++)
+        {
+            if (!RenderedBlockMetadata.TryGet(existingBlocks[i], out oldInfos[i]))
             {
-                targetBlocks.Add(queue.Dequeue());
+                var renderedCount = RenderAll(document, blocks, signatures);
+                LastRenderStats = new PreviewRenderStats(0, renderedCount, existingBlocks.Count, stopwatch.ElapsedMilliseconds);
+                return document;
+            }
+        }
+
+        var oldCount = existingBlocks.Count;
+        var newCount = blocks.Count;
+        var sharedCount = Math.Min(oldCount, newCount);
+
+        var prefixCount = 0;
+        while (prefixCount < sharedCount
+               && IsReusableMatch(oldInfos[prefixCount].Signature, signatures[prefixCount]))
+        {
+            prefixCount++;
+        }
+
+        var suffixCount = 0;
+        while (suffixCount < sharedCount - prefixCount
+               && IsReusableMatch(oldInfos[oldCount - 1 - suffixCount].Signature, signatures[newCount - 1 - suffixCount]))
+        {
+            suffixCount++;
+        }
+
+        if (prefixCount == oldCount && prefixCount == newCount)
+        {
+            for (var i = 0; i < prefixCount; i++)
+                SetMetadata(existingBlocks[i], oldInfos[i].Signature, blocks[i]);
+
+            var reusedAll = prefixCount;
+            LastRenderStats = new PreviewRenderStats(reusedAll, 0, 0, stopwatch.ElapsedMilliseconds);
+            return document;
+        }
+
+        var oldMiddleStart = prefixCount;
+        var oldMiddleEnd = oldCount - suffixCount;
+        var newMiddleStart = prefixCount;
+        var newMiddleEnd = newCount - suffixCount;
+        var oldMiddleCount = oldMiddleEnd - oldMiddleStart;
+
+        // Large replacements are cheaper as a full rebuild than as many collection edits.
+        if (oldCount >= 32 && oldMiddleCount > oldCount / 2)
+        {
+            var renderedCount = RenderAll(document, blocks, signatures);
+            LastRenderStats = new PreviewRenderStats(0, renderedCount, oldCount, stopwatch.ElapsedMilliseconds);
+            return document;
+        }
+
+        var reusableBlocks = new Dictionary<BlockSignature, Queue<WpfBlock>>();
+        for (var i = oldMiddleStart; i < oldMiddleEnd; i++)
+        {
+            var signature = oldInfos[i].Signature;
+            if (!signature.IsReusable)
                 continue;
+
+            if (!reusableBlocks.TryGetValue(signature, out var queue))
+            {
+                queue = new Queue<WpfBlock>();
+                reusableBlocks[signature] = queue;
             }
 
-            var rendered = RenderBlock(block);
+            queue.Enqueue(existingBlocks[i]);
+        }
+
+        var targetMiddle = new List<WpfBlock>(newMiddleEnd - newMiddleStart);
+        var reusedMiddle = 0;
+        var rebuiltMiddle = 0;
+        for (var i = newMiddleStart; i < newMiddleEnd; i++)
+        {
+            var signature = signatures[i];
+            WpfBlock? rendered = null;
+
+            if (signature.IsReusable
+                && reusableBlocks.TryGetValue(signature, out var queue)
+                && queue.Count > 0)
+            {
+                rendered = queue.Dequeue();
+                reusedMiddle++;
+            }
+            else
+            {
+                rendered = RenderBlock(blocks[i]);
+                rebuiltMiddle++;
+            }
+
             if (rendered is null)
                 continue;
 
-            SetBlockSignature(rendered, signature);
-            targetBlocks.Add(rendered);
+            SetMetadata(rendered, signature, blocks[i]);
+            targetMiddle.Add(rendered);
         }
 
-        ApplyBlockOrder(document, targetBlocks);
+        for (var i = oldMiddleStart; i < oldMiddleEnd; i++)
+            document.Blocks.Remove(existingBlocks[i]);
+
+        // Keep line metadata accurate for blocks whose content stayed the same but whose
+        // source lines moved because of an insertion/deletion above them.
+        for (var i = 0; i < prefixCount; i++)
+            SetMetadata(existingBlocks[i], oldInfos[i].Signature, blocks[i]);
+
+        for (var i = 0; i < suffixCount; i++)
+        {
+            var oldIndex = oldCount - suffixCount + i;
+            var newIndex = newCount - suffixCount + i;
+            SetMetadata(existingBlocks[oldIndex], oldInfos[oldIndex].Signature, blocks[newIndex]);
+        }
+
+        if (suffixCount > 0)
+        {
+            var anchor = existingBlocks[oldCount - suffixCount];
+            foreach (var block in targetMiddle)
+                document.Blocks.InsertBefore(anchor, block);
+        }
+        else
+        {
+            foreach (var block in targetMiddle)
+                document.Blocks.Add(block);
+        }
+
+        LastRenderStats = new PreviewRenderStats(
+            prefixCount + suffixCount + reusedMiddle,
+            rebuiltMiddle,
+            oldMiddleCount - reusedMiddle,
+            stopwatch.ElapsedMilliseconds);
         return document;
     }
 
     /// <summary>
     /// Render a single block. Public for nested rendering (e.g., blockquotes).
     /// </summary>
-    public System.Windows.Documents.Block? RenderBlock(CoreBlock block)
+    public WpfBlock? RenderBlock(CoreBlock block)
     {
         if (_renderers.TryGetValue(block.GetType(), out var renderer))
             return renderer.Render(block);
         return null;
+    }
+
+    private int RenderAll(FlowDocument document, IReadOnlyList<CoreBlock> blocks, IReadOnlyList<BlockSignature> signatures)
+    {
+        document.Blocks.Clear();
+
+        var renderedCount = 0;
+        for (var i = 0; i < blocks.Count; i++)
+        {
+            var rendered = RenderBlock(blocks[i]);
+            if (rendered is null)
+                continue;
+
+            SetMetadata(rendered, signatures[i], blocks[i]);
+            document.Blocks.Add(rendered);
+            renderedCount++;
+        }
+
+        return renderedCount;
+    }
+
+    private static bool IsReusableMatch(BlockSignature oldSignature, BlockSignature newSignature) =>
+        oldSignature.IsReusable && newSignature.IsReusable && oldSignature == newSignature;
+
+    private static void SetMetadata(WpfBlock block, BlockSignature signature, CoreBlock source)
+    {
+        RenderedBlockMetadata.Set(block, signature, source.LineStart, source.LineEnd);
     }
 
     private FlowDocument CreateDocument()
@@ -137,60 +304,9 @@ public sealed class FlowDocumentRenderer
         document.FontSize = _theme.BaseFontSize;
         document.PagePadding = _theme.PagePadding;
         document.TextAlignment = TextAlignment.Left;
-
         if (!double.IsNaN(_theme.LineHeight) && _theme.LineHeight > 0)
             document.LineHeight = _theme.LineHeight;
         else
             document.ClearValue(FlowDocument.LineHeightProperty);
     }
-
-    private static void ApplyBlockOrder(FlowDocument document, IReadOnlyList<System.Windows.Documents.Block> targetBlocks)
-    {
-        foreach (var block in document.Blocks.Cast<System.Windows.Documents.Block>().ToList())
-        {
-            if (!targetBlocks.Any(target => ReferenceEquals(target, block)))
-                document.Blocks.Remove(block);
-        }
-
-        for (var i = 0; i < targetBlocks.Count; i++)
-        {
-            var currentBlocks = document.Blocks.Cast<System.Windows.Documents.Block>().ToList();
-            var target = targetBlocks[i];
-            if (i < currentBlocks.Count && ReferenceEquals(currentBlocks[i], target))
-                continue;
-
-            if (document.Blocks.Contains(target))
-                document.Blocks.Remove(target);
-
-            currentBlocks = document.Blocks.Cast<System.Windows.Documents.Block>().ToList();
-            if (i < currentBlocks.Count)
-                document.Blocks.InsertBefore(currentBlocks[i], target);
-            else
-                document.Blocks.Add(target);
-        }
-    }
-
-    private static string CreateBlockSignature(CoreBlock block, string markdown)
-    {
-        var source = ExtractSource(markdown, block.LineStart, block.LineEnd);
-        return $"{block.GetType().FullName}:{source}";
-    }
-
-    private static string ExtractSource(string markdown, int lineStart, int lineEnd)
-    {
-        if (string.IsNullOrEmpty(markdown) || lineStart <= 0 || lineEnd < lineStart)
-            return $"{lineStart}:{lineEnd}";
-
-        var normalized = markdown.Replace("\r\n", "\n").Replace('\r', '\n');
-        var lines = normalized.Split('\n');
-        var start = Math.Clamp(lineStart - 1, 0, lines.Length - 1);
-        var end = Math.Clamp(lineEnd - 1, start, lines.Length - 1);
-        return string.Join("\n", lines.Skip(start).Take(end - start + 1));
-    }
-
-    private static string? GetBlockSignature(System.Windows.Documents.Block block) =>
-        block.GetValue(BlockSignatureProperty) as string;
-
-    private static void SetBlockSignature(System.Windows.Documents.Block block, string signature) =>
-        block.SetValue(BlockSignatureProperty, signature);
 }
