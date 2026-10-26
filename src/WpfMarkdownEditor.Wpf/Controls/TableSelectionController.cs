@@ -24,6 +24,8 @@ internal sealed class TableSelectionController : IDisposable
     private readonly List<TableCellView> _selectedCells = [];
     private readonly Dictionary<RichTextBox, TableCellView> _cellByEditor = [];
     private readonly Dictionary<Border, TableCellView> _cellByContainer = [];
+    private readonly Dictionary<TableCellView, Border> _containerByCell = [];
+    private readonly Dictionary<TableCellView, Rect> _cellRects = [];
     private readonly Dictionary<TableCellView, AppliedRange> _appliedRanges = [];
     // Mouse moves only record the newest point; selection writes run at most once
     // per UI frame. Reapplying a RichTextBox selection for every mouse event is
@@ -40,9 +42,11 @@ internal sealed class TableSelectionController : IDisposable
     private Point _pendingPoint;
     private bool _hasPendingPoint;
     private TableCellView? _lastHitCell;
-    private Rect _lastHitCellBounds;
+    private Rect _tableRect = Rect.Empty;
+    private ScrollViewer? _previewScrollViewer;
     private bool _dragging;
     private bool _mouseCaptured;
+    private bool _completingDrag;
     private bool _disposed;
 
     private readonly record struct AppliedRange(int StartOffset, int EndOffset, bool WholeCell);
@@ -57,7 +61,10 @@ internal sealed class TableSelectionController : IDisposable
         {
             _cellByEditor[cell.Editor] = cell;
             if (VisualTreeHelper.GetParent(cell.Editor) is Border container)
+            {
                 _cellByContainer[container] = cell;
+                _containerByCell[cell] = container;
+            }
         }
 
         _selectionTimer = new DispatcherTimer(DispatcherPriority.Input, tableRoot.Dispatcher)
@@ -98,6 +105,15 @@ internal sealed class TableSelectionController : IDisposable
     internal bool HasSelection => _selectedCells.Count > 0;
 
     internal bool HasCrossCellSelection => _selectedCells.Count > 1;
+
+    internal Rect TableRect => _tableRect;
+
+    internal void RebuildGeometryForTest() => RebuildGeometry();
+
+    internal TableCellView? ResolveCellForTest(Point point) => ResolveCell(point);
+
+    internal Rect GetCellRectForTest(TableCellView cell) =>
+        _cellRects.TryGetValue(cell, out var rect) ? rect : Rect.Empty;
 
     internal static bool IsTableSource(DependencyObject? source)
     {
@@ -238,8 +254,11 @@ internal sealed class TableSelectionController : IDisposable
         if (e.ChangedButton != MouseButton.Left || IsHyperlinkSource(e.OriginalSource as DependencyObject))
             return;
 
+        RebuildGeometry();
+        _previewScrollViewer ??= FindAncestor<ScrollViewer>(_tableRoot);
+
         var point = e.GetPosition(_tableRoot);
-        var cell = HitTestCell(point);
+        var cell = ResolveCell(point);
         if (cell is null)
             return;
 
@@ -290,6 +309,8 @@ internal sealed class TableSelectionController : IDisposable
         {
             _dragging = true;
             _mouseCaptured = _tableRoot.CaptureMouse();
+            _previewScrollViewer ??= FindAncestor<ScrollViewer>(_tableRoot);
+            RebuildGeometry();
             _dragCandidateCell.Editor.Focus();
             ClearCellSelections();
         }
@@ -314,20 +335,26 @@ internal sealed class TableSelectionController : IDisposable
 
     private void OnSelectionTimerTick(object? sender, EventArgs e)
     {
-        if (!_dragging || !_hasPendingPoint)
+        if (!_dragging)
         {
             _selectionTimer.Stop();
             return;
         }
 
-        var point = _pendingPoint;
+        var scrolled = TryAutoScroll();
+        if (!_hasPendingPoint && !scrolled)
+            return;
+
+        var point = scrolled || _hasPendingPoint
+            ? Mouse.GetPosition(_tableRoot)
+            : _pendingPoint;
         _hasPendingPoint = false;
         UpdateSelectionAt(point);
     }
 
     private void UpdateSelectionAt(Point point)
     {
-        var cell = HitTestCell(point) ?? _lastHitCell ?? _dragCandidateCell;
+        var cell = ResolveCell(point);
         if (cell is null)
             return;
 
@@ -338,6 +365,71 @@ internal sealed class TableSelectionController : IDisposable
         UpdateSelection();
     }
 
+    private bool TryAutoScroll()
+    {
+        if (_previewScrollViewer is null || !_previewScrollViewer.IsVisible)
+            return false;
+
+        var pointer = Mouse.GetPosition(_previewScrollViewer);
+        var viewportHeight = _previewScrollViewer.ViewportHeight > 0
+            ? _previewScrollViewer.ViewportHeight
+            : _previewScrollViewer.ActualHeight;
+        if (viewportHeight <= 0)
+            return false;
+
+        const double edgeThreshold = 32;
+        const double scrollStep = 28;
+        double delta;
+        if (pointer.Y < edgeThreshold)
+            delta = -scrollStep;
+        else if (pointer.Y > viewportHeight - edgeThreshold)
+            delta = scrollStep;
+        else
+            return false;
+
+        // Do not scroll the document when the table is already fully visible;
+        // dragging below a short table should simply clamp to its last row.
+        var tableTop = _tableRoot.TranslatePoint(new Point(0, 0), _previewScrollViewer).Y;
+        var tableBottom = tableTop + _tableRoot.ActualHeight;
+        if (delta < 0 && tableTop >= 0)
+            return false;
+        if (delta > 0 && tableBottom <= viewportHeight)
+            return false;
+
+        var before = _previewScrollViewer.VerticalOffset;
+        var target = Math.Clamp(
+            before + delta,
+            0,
+            _previewScrollViewer.ScrollableHeight);
+        if (Math.Abs(target - before) < 0.5)
+            return false;
+
+        _previewScrollViewer.ScrollToVerticalOffset(target);
+        return true;
+    }
+
+    private void CompleteDrag()
+    {
+        if (_completingDrag || !_dragging)
+            return;
+
+        _completingDrag = true;
+        try
+        {
+            FlushPendingSelection();
+            _selectionTimer.Stop();
+            _dragging = false;
+            _mouseCaptured = false;
+            _caretCell?.Editor.Focus();
+            if (Mouse.Captured == _tableRoot)
+                _tableRoot.ReleaseMouseCapture();
+        }
+        finally
+        {
+            _completingDrag = false;
+        }
+    }
+
     private void OnPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
         if (!_dragging)
@@ -346,21 +438,20 @@ internal sealed class TableSelectionController : IDisposable
             return;
         }
 
-        FlushPendingSelection();
-        _selectionTimer.Stop();
-        _dragging = false;
-        _mouseCaptured = false;
-        _caretCell?.Editor.Focus();
-        _tableRoot.ReleaseMouseCapture();
+        CompleteDrag();
         e.Handled = true;
     }
 
     private void OnLostMouseCapture(object sender, MouseEventArgs e)
     {
-        _selectionTimer.Stop();
-        _hasPendingPoint = false;
-        _mouseCaptured = false;
-        _dragging = false;
+        if (_dragging)
+            CompleteDrag();
+        else
+        {
+            _selectionTimer.Stop();
+            _hasPendingPoint = false;
+            _mouseCaptured = false;
+        }
     }
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
@@ -515,22 +606,93 @@ internal sealed class TableSelectionController : IDisposable
         _activeController = new WeakReference<TableSelectionController>(this);
     }
 
-    private TableCellView? HitTestCell(Point point)
+    private void RebuildGeometry()
     {
-        if (_lastHitCell is not null && _lastHitCellBounds.Contains(point))
+        _cellRects.Clear();
+        _tableRect = new Rect(
+            new Point(0, 0),
+            new Size(Math.Max(0, _tableRoot.ActualWidth), Math.Max(0, _tableRoot.ActualHeight)));
+
+        foreach (var cell in _cells)
+        {
+            if (!_containerByCell.TryGetValue(cell, out var container))
+                continue;
+
+            var topLeft = container.TranslatePoint(new Point(0, 0), _tableRoot);
+            _cellRects[cell] = new Rect(
+                topLeft,
+                new Size(Math.Max(0, container.ActualWidth), Math.Max(0, container.ActualHeight)));
+        }
+    }
+
+    private TableCellView? ResolveCell(Point point)
+    {
+        if (_lastHitCell is not null
+            && _cellRects.TryGetValue(_lastHitCell, out var cachedRect)
+            && cachedRect.Contains(point))
+        {
             return _lastHitCell;
+        }
 
         var hit = _tableRoot.InputHitTest(point) as DependencyObject;
         var cell = FindCell(hit);
-        if (cell is null)
+        if (cell is not null)
+        {
+            _lastHitCell = cell;
+            return cell;
+        }
+
+        if (_cellRects.Count == 0)
+            RebuildGeometry();
+
+        if (_cellRects.Count == 0 || _tableRect.IsEmpty || _tableRect.Width <= 0 || _tableRect.Height <= 0)
             return null;
 
-        _lastHitCell = cell;
-        var topLeft = cell.Editor.TranslatePoint(new Point(0, 0), _tableRoot);
-        _lastHitCellBounds = new Rect(
-            topLeft,
-            new Size(cell.Editor.ActualWidth, cell.Editor.ActualHeight));
-        return cell;
+        // Clamp points outside the table (or in border/padding gaps) to the
+        // nearest cell so dragging past the last row/column still reaches it.
+        var clamped = new Point(
+            Math.Clamp(point.X, _tableRect.Left + 0.5, _tableRect.Right - 0.5),
+            Math.Clamp(point.Y, _tableRect.Top + 0.5, _tableRect.Bottom - 0.5));
+
+        TableCellView? nearest = null;
+        var nearestDistance = double.MaxValue;
+        foreach (var (candidate, rect) in _cellRects)
+        {
+            if (rect.Contains(clamped))
+            {
+                _lastHitCell = candidate;
+                return candidate;
+            }
+
+            var center = new Point(rect.Left + rect.Width / 2, rect.Top + rect.Height / 2);
+            var distance = (center - clamped).LengthSquared;
+            if (distance < nearestDistance)
+            {
+                nearestDistance = distance;
+                nearest = candidate;
+            }
+        }
+
+        _lastHitCell = nearest;
+        return nearest;
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? source) where T : DependencyObject
+    {
+        while (source is not null)
+        {
+            if (source is T match)
+                return match;
+
+            source = source switch
+            {
+                Visual => VisualTreeHelper.GetParent(source),
+                FrameworkContentElement contentElement => contentElement.Parent,
+                _ => LogicalTreeHelper.GetParent(source),
+            };
+        }
+
+        return null;
     }
 
     private TableCellView? FindCell(DependencyObject? source)

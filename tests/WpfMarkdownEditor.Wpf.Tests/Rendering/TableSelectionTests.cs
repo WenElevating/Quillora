@@ -112,6 +112,84 @@ public sealed class TableSelectionTests
     }
 
     [Fact]
+    public void ResolveCell_OutsideRightAndBottom_ClampsToLastCell()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var (_, controller, window) = RenderTableInWindow(
+                "| A | B |\n| --- | --- |\n| 1 | 2 |");
+            try
+            {
+                controller.RebuildGeometryForTest();
+                var lastCell = controller.Cells[^1];
+                var tableRect = controller.TableRect;
+
+                var resolved = controller.ResolveCellForTest(
+                    new Point(tableRect.Right + 80, tableRect.Bottom + 80));
+
+                Assert.Same(lastCell, resolved);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void ResolveCell_OutsideTopLeft_ClampsToFirstCell()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var (_, controller, window) = RenderTableInWindow(
+                "| A | B |\n| --- | --- |\n| 1 | 2 |");
+            try
+            {
+                controller.RebuildGeometryForTest();
+                var firstCell = controller.Cells[0];
+                var tableRect = controller.TableRect;
+
+                var resolved = controller.ResolveCellForTest(
+                    new Point(tableRect.Left - 80, tableRect.Top - 80));
+
+                Assert.Same(firstCell, resolved);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void ResolveCell_EveryCellCenter_ReturnsThatCell()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var (_, controller, window) = RenderTableInWindow(
+                "| A | B |\n| --- | --- |\n| 1 | 2 |");
+            try
+            {
+                controller.RebuildGeometryForTest();
+
+                foreach (var cell in controller.Cells)
+                {
+                    var rect = controller.GetCellRectForTest(cell);
+                    var center = new Point(
+                        rect.Left + rect.Width / 2,
+                        rect.Top + rect.Height / 2);
+
+                    Assert.Same(cell, controller.ResolveCellForTest(center));
+                }
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void ClearSelection_ResetsEveryCellAndText()
     {
         WpfTestHost.Run(() =>
@@ -150,5 +228,23 @@ public sealed class TableSelectionTests
         var border = Assert.IsType<Border>(container.Child);
         var controller = Assert.IsType<TableSelectionController>(border.Tag);
         return (border, controller);
+    }
+
+    private (Border Border, TableSelectionController Controller, Window Window) RenderTableInWindow(string markdown)
+    {
+        var document = _renderer.Render(_parser.Parse(markdown));
+        var container = Assert.IsType<BlockUIContainer>(document.Blocks.First());
+        var border = Assert.IsType<Border>(container.Child);
+        var controller = Assert.IsType<TableSelectionController>(border.Tag);
+        var viewer = new FlowDocumentScrollViewer
+        {
+            Document = document,
+            Width = 560,
+            Height = 420,
+        };
+        var window = new Window { Content = viewer, Width = 620, Height = 500 };
+        window.Show();
+        window.UpdateLayout();
+        return (border, controller, window);
     }
 }
