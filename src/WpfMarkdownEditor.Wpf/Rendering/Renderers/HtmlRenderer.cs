@@ -9,6 +9,7 @@ using WpfMarkdownEditor.Core.Parsing.Blocks;
 using WpfMarkdownEditor.Core.Parsing.Html;
 using WpfMarkdownEditor.Core.Parsing.Inlines;
 using WpfMarkdownEditor.Wpf.SyntaxHighlighting;
+using WpfMarkdownEditor.Wpf.Rendering;
 using WpfMarkdownEditor.Wpf.Theming;
 using CoreBlock = WpfMarkdownEditor.Core.Parsing.Block;
 using WpfBlock = System.Windows.Documents.Block;
@@ -152,7 +153,7 @@ public sealed class HtmlRenderer(
         var paragraph = new Paragraph
         {
             FontFamily = theme.BodyFont,
-            Foreground = new SolidColorBrush(theme.ForegroundColor),
+            Foreground = EditorBrushCache.Get(theme.ForegroundColor),
             TextAlignment = alignment,
             Margin = new Thickness(0, 0, 0, theme.ParagraphSpacing),
         };
@@ -176,7 +177,7 @@ public sealed class HtmlRenderer(
         var paragraph = new Paragraph
         {
             FontFamily = theme.HeadingFont,
-            Foreground = new SolidColorBrush(theme.HeadingColor),
+            Foreground = EditorBrushCache.Get(theme.HeadingColor),
             FontSize = GetHeadingFontSize(level),
             FontWeight = FontWeights.Bold,
             TextAlignment = alignment,
@@ -206,7 +207,7 @@ public sealed class HtmlRenderer(
         {
             CellSpacing = 0,
             Margin = new Thickness(0, 8, 0, theme.ParagraphSpacing),
-            BorderBrush = new SolidColorBrush(theme.TableBorderColor),
+            BorderBrush = EditorBrushCache.Get(theme.TableBorderColor),
             BorderThickness = new Thickness(1),
         };
 
@@ -235,7 +236,7 @@ public sealed class HtmlRenderer(
 
                 row.Cells.Add(new TableCell(paragraph)
                 {
-                    BorderBrush = new SolidColorBrush(theme.TableBorderColor),
+                    BorderBrush = EditorBrushCache.Get(theme.TableBorderColor),
                     BorderThickness = new Thickness(0, 0, 1, 1),
                 });
             }
@@ -314,8 +315,8 @@ public sealed class HtmlRenderer(
         {
             FontFamily = theme.CodeFont,
             FontSize = 13,
-            Background = new SolidColorBrush(theme.InlineCodeBackground),
-            Foreground = new SolidColorBrush(theme.InlineCodeForeground),
+            Background = EditorBrushCache.Get(theme.InlineCodeBackground),
+            Foreground = EditorBrushCache.Get(theme.InlineCodeForeground),
         };
         foreach (var child in children)
             RenderInlineNode(span.Inlines, child, parseMarkdownText: false);
@@ -345,7 +346,7 @@ public sealed class HtmlRenderer(
 
         var hyperlink = new Hyperlink(span)
         {
-            Foreground = new SolidColorBrush(theme.LinkColor),
+            Foreground = EditorBrushCache.Get(theme.LinkColor),
             TextDecorations = null,
         };
 

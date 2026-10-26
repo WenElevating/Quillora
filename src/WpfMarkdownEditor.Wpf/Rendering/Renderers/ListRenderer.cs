@@ -3,6 +3,7 @@ using System.Windows.Documents;
 using System.Windows.Media;
 using WpfMarkdownEditor.Core;
 using WpfMarkdownEditor.Core.Parsing.Blocks;
+using WpfMarkdownEditor.Wpf.Rendering;
 using WpfMarkdownEditor.Wpf.Theming;
 
 namespace WpfMarkdownEditor.Wpf.Rendering.Renderers;
@@ -51,7 +52,7 @@ public sealed class ListRenderer(
                         var p = new Paragraph
                         {
                             FontFamily = theme.BodyFont,
-                            Foreground = new SolidColorBrush(theme.ForegroundColor),
+                            Foreground = EditorBrushCache.Get(theme.ForegroundColor),
                             FontSize = theme.BaseFontSize,
                             Margin = new Thickness(0),
                         };

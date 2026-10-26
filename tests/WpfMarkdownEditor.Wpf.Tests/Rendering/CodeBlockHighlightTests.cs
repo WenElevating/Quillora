@@ -43,8 +43,34 @@ public sealed class CodeBlockHighlightTests
     }
 
     [Fact]
-    public void OffscreenCodeBlock_StaysPlainUntilScrolledIntoView()
+    public void OnBlocksAppended_HighlightsVisibleCodeBlock()
     {
+        WpfTestHost.Run(() =>
+        {
+            var viewer = new FlowDocumentScrollViewer();
+            var window = ShowInWindow(viewer);
+            try
+            {
+                var renderer = new FlowDocumentRenderer(EditorTheme.Light, null, new SyntaxHighlighter());
+                viewer.Document = renderer.Render(_parser.Parse("```csharp\nvar value = 1; // comment\n```"));
+                window.UpdateLayout();
+                var paragraph = FindCodeParagraph(viewer.Document!);
+                var section = (Section)viewer.Document!.Blocks.First();
+                using var scheduler = new CodeBlockHighlightScheduler(viewer, () => { });
+
+                scheduler.OnBlocksAppended([section]);
+
+                Assert.True(WaitUntil(() => paragraph.Inlines.Count > 1));
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void OffscreenCodeBlock_StaysPlainUntilScrolledIntoView()    {
         WpfTestHost.Run(() =>
         {
             var viewer = new FlowDocumentScrollViewer();

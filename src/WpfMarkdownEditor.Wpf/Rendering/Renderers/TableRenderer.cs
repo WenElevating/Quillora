@@ -4,6 +4,7 @@ using System.Windows.Media;
 using WpfMarkdownEditor.Core;
 using WpfMarkdownEditor.Core.Parsing;
 using WpfMarkdownEditor.Core.Parsing.Blocks;
+using WpfMarkdownEditor.Wpf.Rendering;
 using WpfMarkdownEditor.Wpf.Theming;
 
 namespace WpfMarkdownEditor.Wpf.Rendering.Renderers;
@@ -22,7 +23,7 @@ public sealed class TableRenderer(
         var tableEl = new Table
         {
             Margin = new Thickness(0, 8, 0, 8),
-            BorderBrush = new SolidColorBrush(theme.TableBorderColor),
+            BorderBrush = EditorBrushCache.Get(theme.TableBorderColor),
             BorderThickness = new Thickness(1),
             CellSpacing = 0,
         };
@@ -36,7 +37,7 @@ public sealed class TableRenderer(
         var rg = new TableRowGroup();
 
         // Header row
-        var headerRow = new TableRow { Background = new SolidColorBrush(theme.TableHeaderBackground) };
+        var headerRow = new TableRow { Background = EditorBrushCache.Get(theme.TableHeaderBackground) };
         for (var i = 0; i < columns; i++)
         {
             var text = i < table.Headers.Count ? table.Headers[i] : "";
@@ -44,7 +45,7 @@ public sealed class TableRenderer(
             {
                 FontWeight = FontWeights.Bold,
                 Padding = new Thickness(13, 6, 13, 6),
-                BorderBrush = new SolidColorBrush(theme.TableBorderColor),
+                BorderBrush = EditorBrushCache.Get(theme.TableBorderColor),
                 BorderThickness = new Thickness(0, 0, 1, 1),
             };
             _inlineRenderer.RenderInlines(headerPara, _markdownParser.ParseInlines(text));
@@ -60,7 +61,7 @@ public sealed class TableRenderer(
             var dataRow = new TableRow
             {
                 Background = isAltRow
-                    ? new SolidColorBrush(theme.TableAltRowBackground)
+                    ? EditorBrushCache.Get(theme.TableAltRowBackground)
                     : Brushes.Transparent,
             };
             for (var i = 0; i < columns; i++)
@@ -69,7 +70,7 @@ public sealed class TableRenderer(
                 var dataPara = new Paragraph
                 {
                     Padding = new Thickness(13, 6, 13, 6),
-                    BorderBrush = new SolidColorBrush(theme.TableBorderColor),
+                    BorderBrush = EditorBrushCache.Get(theme.TableBorderColor),
                     BorderThickness = new Thickness(0, 0, 1, 0),
                 };
                 _inlineRenderer.RenderInlines(dataPara, _markdownParser.ParseInlines(text));

@@ -18,7 +18,7 @@ internal static class InlineImageRenderer
     {
         var placeholder = new Run(string.IsNullOrEmpty(image.Alt) ? string.Empty : $"[{image.Alt}]")
         {
-            Foreground = new SolidColorBrush(theme.LinkColor),
+            Foreground = EditorBrushCache.Get(theme.LinkColor),
         };
 
         if (imageResolver is not null)

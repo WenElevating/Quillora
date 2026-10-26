@@ -83,8 +83,8 @@ public sealed class InlineRenderer
         {
             FontFamily = _theme.CodeFont,
             FontSize = 13,
-            Background = new SolidColorBrush(_theme.InlineCodeBackground),
-            Foreground = new SolidColorBrush(_theme.InlineCodeForeground),
+            Background = EditorBrushCache.Get(_theme.InlineCodeBackground),
+            Foreground = EditorBrushCache.Get(_theme.InlineCodeForeground),
         },
         LinkInline l => CreateHyperlink(l),
         ImageInline img => InlineImageRenderer.Render(img, _theme, _imageResolver, _requestLayoutRefresh),
@@ -142,7 +142,7 @@ public sealed class InlineRenderer
 
         var hyperlink = new Hyperlink(span)
         {
-            Foreground = new SolidColorBrush(_theme.LinkColor),
+            Foreground = EditorBrushCache.Get(_theme.LinkColor),
             TextDecorations = null,
         };
 

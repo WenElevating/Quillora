@@ -14,6 +14,11 @@ namespace WpfMarkdownEditor.Wpf.Rendering;
 
 internal readonly record struct PreviewRenderStats(int Reused, int Rebuilt, int Removed, long ElapsedMilliseconds);
 
+internal readonly record struct ProgressiveAppendResult(
+    int NextIndex,
+    IReadOnlyList<WpfBlock> AppendedBlocks,
+    int RenderedCount);
+
 /// <summary>
 /// Renders Block AST to WPF FlowDocument.
 /// </summary>
@@ -35,10 +40,8 @@ public sealed class FlowDocumentRenderer
         Action? requestLayoutRefresh = null)
     {
         _theme = theme;
-        _backgroundBrush = new SolidColorBrush(theme.BackgroundColor);
-        _backgroundBrush.Freeze();
-        _foregroundBrush = new SolidColorBrush(theme.ForegroundColor);
-        _foregroundBrush.Freeze();
+        _backgroundBrush = EditorBrushCache.Get(theme.BackgroundColor);
+        _foregroundBrush = EditorBrushCache.Get(theme.ForegroundColor);
         var cachedImageResolver = imageResolver is null
             ? null
             : imageResolver as CachingImageResolver ?? new CachingImageResolver(imageResolver);
@@ -262,12 +265,28 @@ public sealed class FlowDocumentRenderer
         return null;
     }
 
-    private int RenderAll(FlowDocument document, IReadOnlyList<CoreBlock> blocks, IReadOnlyList<BlockSignature> signatures)
-    {
-        document.Blocks.Clear();
+    /// <summary>
+    /// Creates an empty, styled document for progressive rendering.
+    /// </summary>
+    internal FlowDocument CreateProgressiveDocument() => CreateDocument();
 
+    /// <summary>
+    /// Appends the next slice of blocks to a document. Used by progressive first-paint
+    /// rendering so large documents can be mounted in viewport-sized batches.
+    /// </summary>
+    internal ProgressiveAppendResult AppendBlockRange(
+        FlowDocument document,
+        IReadOnlyList<CoreBlock> blocks,
+        IReadOnlyList<BlockSignature> signatures,
+        int startIndex,
+        int count)
+    {
+        var start = Math.Clamp(startIndex, 0, blocks.Count);
+        var end = Math.Clamp(start + Math.Max(0, count), start, blocks.Count);
+
+        var appended = new List<WpfBlock>(end - start);
         var renderedCount = 0;
-        for (var i = 0; i < blocks.Count; i++)
+        for (var i = start; i < end; i++)
         {
             var rendered = RenderBlock(blocks[i]);
             if (rendered is null)
@@ -275,10 +294,17 @@ public sealed class FlowDocumentRenderer
 
             SetMetadata(rendered, signatures[i], blocks[i]);
             document.Blocks.Add(rendered);
+            appended.Add(rendered);
             renderedCount++;
         }
 
-        return renderedCount;
+        return new ProgressiveAppendResult(end, appended, renderedCount);
+    }
+
+    private int RenderAll(FlowDocument document, IReadOnlyList<CoreBlock> blocks, IReadOnlyList<BlockSignature> signatures)
+    {
+        document.Blocks.Clear();
+        return AppendBlockRange(document, blocks, signatures, 0, blocks.Count).RenderedCount;
     }
 
     private static bool IsReusableMatch(BlockSignature oldSignature, BlockSignature newSignature) =>

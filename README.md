@@ -29,6 +29,7 @@ Quillora is a WPF Markdown workspace for writing, previewing, translating, and e
 ## Highlights
 
 - **Live split preview** - Edit Markdown on the left and render a debounced preview on the right, with block-level incremental rendering that reuses unchanged blocks.
+- **Large-document first paint** - Documents with hundreds of blocks mount the first screen immediately and fill the rest in background chunks instead of freezing the window.
 - **Source/preview sync** - The preview follows the caret block, highlights the current block, and clicking preview text jumps to the matching source line.
 - **Clean Quillora branding** - Brand-only empty-window title, refreshed app icon, and installer metadata.
 - **File workflows** - New/open/save/save as, open folder, recent files, quick open, move file, delete file, properties, show in sidebar, import text/Markdown, export HTML, and print.
@@ -141,7 +142,7 @@ Editor.MarkdownChanged += (_, e) =>
 | Event | Description |
 |---|---|
 | `MarkdownChanged` | Raised when editor text changes. |
-| `PreviewRendered` | Raised after a preview render, carrying the parsed block AST. |
+| `PreviewRendered` | Raised after a preview render, carrying the parsed block AST. `IsComplete` is `false` for the first progressive chunk and `true` when the full document is mounted. |
 
 ## Rendering and Images
 

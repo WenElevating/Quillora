@@ -47,6 +47,22 @@ internal sealed class CodeBlockHighlightScheduler : IDisposable
             ScheduleHighlight();
     }
 
+    /// <summary>
+    /// Collects code blocks appended by a progressive render chunk without rescanning
+    /// the whole document.
+    /// </summary>
+    public void OnBlocksAppended(IReadOnlyList<WpfBlock> blocks)
+    {
+        if (_disposed)
+            return;
+
+        foreach (var block in blocks)
+            CollectBlock(block);
+
+        if (_pending.Count > 0)
+            ScheduleHighlight();
+    }
+
     public void Dispose()
     {
         _disposed = true;

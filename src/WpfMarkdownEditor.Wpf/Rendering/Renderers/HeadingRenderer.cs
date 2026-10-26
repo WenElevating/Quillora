@@ -3,6 +3,7 @@ using System.Windows.Documents;
 using System.Windows.Media;
 using WpfMarkdownEditor.Core;
 using WpfMarkdownEditor.Core.Parsing.Blocks;
+using WpfMarkdownEditor.Wpf.Rendering;
 using WpfMarkdownEditor.Wpf.Theming;
 
 namespace WpfMarkdownEditor.Wpf.Rendering.Renderers;
@@ -20,7 +21,7 @@ public sealed class HeadingRenderer(
         var paragraph = new Paragraph
         {
             FontFamily = theme.HeadingFont,
-            Foreground = new SolidColorBrush(theme.HeadingColor),
+            Foreground = EditorBrushCache.Get(theme.HeadingColor),
             FontSize = GetFontSize(heading.Level),
             FontWeight = FontWeights.Bold,
             Margin = new Thickness(0, theme.HeadingMarginTop, 0, theme.HeadingMarginBottom),
@@ -33,7 +34,7 @@ public sealed class HeadingRenderer(
         {
             var section = new Section
             {
-                BorderBrush = new SolidColorBrush(theme.HeadingBorderColor),
+                BorderBrush = EditorBrushCache.Get(theme.HeadingBorderColor),
                 BorderThickness = new Thickness(0, 0, 0, heading.Level == 1 ? 1 : 1),
                 Padding = new Thickness(0, 0, 0, 8),
             };

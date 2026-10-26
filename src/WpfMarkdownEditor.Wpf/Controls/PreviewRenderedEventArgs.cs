@@ -11,4 +11,11 @@ public sealed class PreviewRenderedEventArgs : EventArgs
     public string Markdown { get; init; } = string.Empty;
 
     public IReadOnlyList<Block> Blocks { get; init; } = [];
+
+    /// <summary>
+    /// False when this event describes the first chunk of a progressive render and more
+    /// blocks will be appended. Consumers that need the complete document should wait
+    /// for the event with <c>IsComplete = true</c>.
+    /// </summary>
+    public bool IsComplete { get; init; } = true;
 }

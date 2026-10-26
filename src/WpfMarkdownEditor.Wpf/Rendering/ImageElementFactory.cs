@@ -155,7 +155,7 @@ internal static class ImageElementFactory
         {
             Width = 13,
             Height = 13,
-            Stroke = new SolidColorBrush(Color.FromRgb(0x8a, 0x8f, 0x98)),
+            Stroke = EditorBrushCache.Get(Color.FromRgb(0x8a, 0x8f, 0x98)),
             StrokeThickness = 1,
             Fill = Brushes.Transparent,
         });
@@ -166,7 +166,7 @@ internal static class ImageElementFactory
             Y1 = 11,
             X2 = 6,
             Y2 = 7,
-            Stroke = new SolidColorBrush(Color.FromRgb(0x8a, 0x8f, 0x98)),
+            Stroke = EditorBrushCache.Get(Color.FromRgb(0x8a, 0x8f, 0x98)),
             StrokeThickness = 1,
         });
 
@@ -176,7 +176,7 @@ internal static class ImageElementFactory
             Y1 = 7,
             X2 = 12,
             Y2 = 12,
-            Stroke = new SolidColorBrush(Color.FromRgb(0x8a, 0x8f, 0x98)),
+            Stroke = EditorBrushCache.Get(Color.FromRgb(0x8a, 0x8f, 0x98)),
             StrokeThickness = 1,
         });
 
@@ -184,7 +184,7 @@ internal static class ImageElementFactory
         {
             Width = 2,
             Height = 2,
-            Fill = new SolidColorBrush(Color.FromRgb(0x8a, 0x8f, 0x98)),
+            Fill = EditorBrushCache.Get(Color.FromRgb(0x8a, 0x8f, 0x98)),
         };
         canvas.Children.Add(dot);
         Canvas.SetLeft(dot, 9);
@@ -195,7 +195,7 @@ internal static class ImageElementFactory
 
     public static FrameworkElement CreateLoadingImagePlaceholder(string? tooltip)
     {
-        var borderBrush = new SolidColorBrush(Color.FromRgb(0xc9, 0xd1, 0xd9));
+        var borderBrush = EditorBrushCache.Get(Color.FromRgb(0xc9, 0xd1, 0xd9));
         borderBrush.Freeze();
 
         return new Border

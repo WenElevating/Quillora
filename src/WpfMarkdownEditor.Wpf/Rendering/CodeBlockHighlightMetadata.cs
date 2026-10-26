@@ -48,18 +48,18 @@ internal sealed class CodeBlockTarget(
 
     private void ApplyTokens(List<SyntaxToken> tokens)
     {
-        var defaultBrush = Frozen(theme.CodeForeground);
+        var defaultBrush = EditorBrushCache.Get(theme.CodeForeground);
         var brushes = new Dictionary<TokenType, SolidColorBrush>
         {
             [TokenType.Plain] = defaultBrush,
             [TokenType.Whitespace] = defaultBrush,
             [TokenType.Identifier] = defaultBrush,
             [TokenType.Punctuation] = defaultBrush,
-            [TokenType.Keyword] = Frozen(theme.SyntaxKeywordColor),
-            [TokenType.Comment] = Frozen(theme.SyntaxCommentColor),
-            [TokenType.String] = Frozen(theme.SyntaxStringColor),
-            [TokenType.Number] = Frozen(theme.SyntaxNumberColor),
-            [TokenType.Type] = Frozen(theme.SyntaxTypeColor),
+            [TokenType.Keyword] = EditorBrushCache.Get(theme.SyntaxKeywordColor),
+            [TokenType.Comment] = EditorBrushCache.Get(theme.SyntaxCommentColor),
+            [TokenType.String] = EditorBrushCache.Get(theme.SyntaxStringColor),
+            [TokenType.Number] = EditorBrushCache.Get(theme.SyntaxNumberColor),
+            [TokenType.Type] = EditorBrushCache.Get(theme.SyntaxTypeColor),
         };
 
         var segments = new List<(SolidColorBrush Brush, string Text)>();
@@ -87,13 +87,6 @@ internal sealed class CodeBlockTarget(
         Paragraph.Inlines.Clear();
         foreach (var (brush, text) in segments)
             Paragraph.Inlines.Add(new Run(text) { Foreground = brush });
-    }
-
-    private static SolidColorBrush Frozen(Color color)
-    {
-        var brush = new SolidColorBrush(color);
-        brush.Freeze();
-        return brush;
     }
 }
 

@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Media;
 using WpfMarkdownEditor.Core.Parsing.Blocks;
+using WpfMarkdownEditor.Wpf.Rendering;
 using WpfMarkdownEditor.Wpf.Theming;
 
 namespace WpfMarkdownEditor.Wpf.Rendering.Renderers;
@@ -13,8 +14,8 @@ public sealed class BlockquoteRenderer(EditorTheme theme, FlowDocumentRenderer p
         var bq = (BlockquoteBlock)block;
         var section = new Section
         {
-            Background = new SolidColorBrush(theme.BlockquoteBackground),
-            BorderBrush = new SolidColorBrush(theme.BlockquoteBorder),
+            Background = EditorBrushCache.Get(theme.BlockquoteBackground),
+            BorderBrush = EditorBrushCache.Get(theme.BlockquoteBorder),
             BorderThickness = new Thickness(theme.BlockquoteBorderWidth, 0, 0, 0),
             Padding = new Thickness(theme.BlockquotePaddingLeft, 8, 16, 8),
             Margin = new Thickness(0, 4, 0, 4),

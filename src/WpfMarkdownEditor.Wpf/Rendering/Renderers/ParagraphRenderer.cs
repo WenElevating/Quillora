@@ -7,6 +7,7 @@ using WpfMarkdownEditor.Core;
 using WpfMarkdownEditor.Core.Parsing.Blocks;
 using WpfMarkdownEditor.Core.Parsing.Html;
 using WpfMarkdownEditor.Core.Parsing.Inlines;
+using WpfMarkdownEditor.Wpf.Rendering;
 using WpfMarkdownEditor.Wpf.Theming;
 
 namespace WpfMarkdownEditor.Wpf.Rendering.Renderers;
@@ -29,7 +30,7 @@ public sealed class ParagraphRenderer(
         var paragraph = new Paragraph
         {
             FontFamily = theme.BodyFont,
-            Foreground = new SolidColorBrush(theme.ForegroundColor),
+            Foreground = EditorBrushCache.Get(theme.ForegroundColor),
             TextAlignment = TextAlignment.Left,
             Margin = new Thickness(0, 0, 0, para.Inlines.Any(static inline => inline is ImageInline) ? ImageSpacingBottom : theme.ParagraphSpacing),
         };
@@ -68,7 +69,7 @@ public sealed class ParagraphRenderer(
         var paragraph = new Paragraph
         {
             FontFamily = theme.BodyFont,
-            Foreground = new SolidColorBrush(theme.ForegroundColor),
+            Foreground = EditorBrushCache.Get(theme.ForegroundColor),
             TextAlignment = TextAlignment.Left,
             Margin = CreateImageMargin(),
         };
@@ -139,7 +140,7 @@ public sealed class ParagraphRenderer(
         return new TextBlock
         {
             Text = $"[{img.Alt}]",
-            Foreground = new SolidColorBrush(theme.LinkColor),
+            Foreground = EditorBrushCache.Get(theme.LinkColor),
             FontStyle = FontStyles.Italic,
         };
     }

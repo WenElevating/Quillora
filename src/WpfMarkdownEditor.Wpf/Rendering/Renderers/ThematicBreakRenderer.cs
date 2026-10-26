@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Media;
 using WpfMarkdownEditor.Core.Parsing.Blocks;
+using WpfMarkdownEditor.Wpf.Rendering;
 using WpfMarkdownEditor.Wpf.Theming;
 
 namespace WpfMarkdownEditor.Wpf.Rendering.Renderers;
@@ -16,7 +17,7 @@ public sealed class ThematicBreakRenderer(EditorTheme theme) : IBlockRenderer
         };
         var line = new Run(new string('\u2500', 80))
         {
-            Foreground = new SolidColorBrush(theme.ThematicBreakColor),
+            Foreground = EditorBrushCache.Get(theme.ThematicBreakColor),
             FontSize = 12,
         };
         para.Inlines.Add(line);

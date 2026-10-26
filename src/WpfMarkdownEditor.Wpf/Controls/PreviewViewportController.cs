@@ -26,8 +26,6 @@ internal sealed class PreviewViewportController : IDisposable
     private ScrollViewer? _previewScrollViewer;
     private ScrollViewer? _sourceScrollViewer;
     private WpfBlock? _highlightedBlock;
-    private SolidColorBrush? _highlightBrush;
-    private EditorTheme? _highlightTheme;
     private bool _syncQueued;
     private int _pendingSyncLine;
     private bool _isSyncing;
@@ -119,6 +117,12 @@ internal sealed class PreviewViewportController : IDisposable
         if (EnableScrollSync)
             SchedulePreviewSync(GetCaretLine());
     }
+
+    /// <summary>
+    /// Re-applies the active-block highlight without forcing a scroll. Used when a
+    /// progressive render finishes while the user may have scrolled away.
+    /// </summary>
+    public void RefreshHighlight() => UpdateActiveBlock();
 
     public void Dispose()
     {
@@ -226,16 +230,8 @@ internal sealed class PreviewViewportController : IDisposable
 
     private SolidColorBrush GetHighlightBrush()
     {
-        var theme = _themeProvider();
-        if (_highlightBrush is not null && ReferenceEquals(_highlightTheme, theme))
-            return _highlightBrush;
-
-        var link = theme.LinkColor;
-        var brush = new SolidColorBrush(Color.FromArgb(0x18, link.R, link.G, link.B));
-        brush.Freeze();
-        _highlightBrush = brush;
-        _highlightTheme = theme;
-        return brush;
+        var link = _themeProvider().LinkColor;
+        return EditorBrushCache.Get(Color.FromArgb(0x18, link.R, link.G, link.B));
     }
 
     private void SchedulePreviewSync(int line)

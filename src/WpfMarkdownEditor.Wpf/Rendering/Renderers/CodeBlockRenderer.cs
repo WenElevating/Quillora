@@ -3,6 +3,7 @@ using System.Windows.Documents;
 using System.Windows.Media;
 using WpfMarkdownEditor.Core.Parsing.Blocks;
 using WpfMarkdownEditor.Wpf.SyntaxHighlighting;
+using WpfMarkdownEditor.Wpf.Rendering;
 using WpfMarkdownEditor.Wpf.Theming;
 
 namespace WpfMarkdownEditor.Wpf.Rendering.Renderers;
@@ -16,7 +17,7 @@ public sealed class CodeBlockRenderer(EditorTheme theme, SyntaxHighlighter? high
         {
             FontFamily = theme.CodeFont,
             FontSize = 13,
-            Foreground = new SolidColorBrush(theme.CodeForeground),
+            Foreground = EditorBrushCache.Get(theme.CodeForeground),
             Padding = new Thickness(16, 12, 16, 12),
             Margin = new Thickness(0),
         };
@@ -35,8 +36,8 @@ public sealed class CodeBlockRenderer(EditorTheme theme, SyntaxHighlighter? high
         // Wrap in Section for background + border (GitHub-style)
         var section = new Section
         {
-            Background = new SolidColorBrush(theme.CodeBackground),
-            BorderBrush = new SolidColorBrush(theme.CodeBlockBorderColor),
+            Background = EditorBrushCache.Get(theme.CodeBackground),
+            BorderBrush = EditorBrushCache.Get(theme.CodeBlockBorderColor),
             BorderThickness = new Thickness(1),
             Padding = new Thickness(0),
             Margin = new Thickness(0, 8, 0, 8),

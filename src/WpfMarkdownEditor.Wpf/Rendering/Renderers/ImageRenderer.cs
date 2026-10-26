@@ -4,6 +4,7 @@ using System.Windows.Documents;
 using System.Windows.Media;
 using WpfMarkdownEditor.Core;
 using WpfMarkdownEditor.Core.Parsing.Blocks;
+using WpfMarkdownEditor.Wpf.Rendering;
 using WpfMarkdownEditor.Wpf.Theming;
 
 namespace WpfMarkdownEditor.Wpf.Rendering.Renderers;
@@ -43,7 +44,7 @@ public sealed class ImageRenderer(
         return new TextBlock
         {
             Text = $"[{image.Alt}]",
-            Foreground = new SolidColorBrush(theme.LinkColor),
+            Foreground = EditorBrushCache.Get(theme.LinkColor),
             FontStyle = FontStyles.Italic,
         };
     }

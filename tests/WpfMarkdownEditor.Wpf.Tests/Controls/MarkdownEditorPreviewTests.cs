@@ -90,6 +90,34 @@ public sealed class MarkdownEditorPreviewTests
     }
 
     [Fact]
+    public void LargeMarkdown_UsesProgressivePreviewAndCompletes()
+    {
+        WpfTestHost.Run(() =>
+        {
+            using var editor = new MarkdownEditor();
+            var sawPartial = false;
+            var sawComplete = false;
+            editor.PreviewRendered += (_, e) =>
+            {
+                if (e.IsComplete)
+                    sawComplete = true;
+                else
+                    sawPartial = true;
+            };
+
+            var markdown = string.Join(
+                "\n\n",
+                Enumerable.Range(0, 1000).Select(i => $"paragraph {i}"));
+            editor.Markdown = markdown;
+
+            Assert.True(WaitUntil(() => sawPartial));
+            Assert.True(WaitUntil(() => sawComplete));
+            Assert.NotNull(editor.PreviewViewer.Document);
+            Assert.Equal(1000, editor.PreviewViewer.Document!.Blocks.Count);
+        });
+    }
+
+    [Fact]
     public void GoToLine_WithScrollSync_ScrollsPreviewAndHighlightsCurrentBlock()
     {
         WpfTestHost.Run(() =>
