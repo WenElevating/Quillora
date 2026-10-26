@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Threading;
 using WpfMarkdownEditor.Core.Parsing.Blocks;
@@ -166,6 +167,41 @@ public sealed class MarkdownEditorPreviewTests
                 var block = FindBlockForLine(editor.PreviewViewer.Document!, 141);
                 Assert.NotNull(block);
                 Assert.NotNull(block!.Background);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void GoToLine_ScrollSync_BringsTargetBlockIntoView()
+    {
+        WpfTestHost.Run(() =>
+        {
+            using var editor = new MarkdownEditor();
+            var window = ShowInWindow(editor);
+            try
+            {
+                var markdown = string.Join("\n\n", Enumerable.Range(0, 80).Select(i => $"paragraph {i}"));
+                editor.Markdown = markdown;
+                Assert.True(WaitUntil(() => editor.PreviewViewer.Document?.Blocks.Count == 80));
+                window.UpdateLayout();
+
+                editor.GoToLine(141);
+                Assert.True(WaitUntil(
+                    () => FindPreviewScrollViewer(editor.PreviewViewer) is { VerticalOffset: > 100 }));
+                window.UpdateLayout();
+
+                var document = editor.PreviewViewer.Document!;
+                var block = FindBlockForLine(document, 141);
+                Assert.NotNull(block);
+                var scrollViewer = FindPreviewScrollViewer(editor.PreviewViewer)!;
+                var rect = block!.ContentStart.GetCharacterRect(LogicalDirection.Forward);
+                Assert.True(
+                    rect.Top >= 0 && rect.Top < scrollViewer.ViewportHeight,
+                    $"blockTop={rect.Top:F1} offset={scrollViewer.VerticalOffset:F1} viewport={scrollViewer.ViewportHeight:F1}");
             }
             finally
             {

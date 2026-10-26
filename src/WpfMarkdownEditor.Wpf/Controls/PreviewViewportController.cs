@@ -93,7 +93,7 @@ internal sealed class PreviewViewportController : IDisposable
                 if (block is null)
                     return;
 
-                ScrollBlockToTop(scrollViewer, document, block);
+                ScrollBlockToTop(scrollViewer, block);
             }));
     }
 
@@ -286,7 +286,7 @@ internal sealed class PreviewViewportController : IDisposable
         _isSyncing = true;
         try
         {
-            ScrollBlockToTop(scrollViewer, document, block);
+            ScrollBlockToTop(scrollViewer, block);
         }
         finally
         {
@@ -294,17 +294,14 @@ internal sealed class PreviewViewportController : IDisposable
         }
     }
 
-    private static void ScrollBlockToTop(ScrollViewer scrollViewer, FlowDocument document, WpfBlock block)
+    private static void ScrollBlockToTop(ScrollViewer scrollViewer, WpfBlock block)
     {
-        var rect = block.ContentStart.GetCharacterRect(LogicalDirection.Forward);
-        if (rect.IsEmpty)
-            return;
-
-        var targetOffset = Math.Max(0, scrollViewer.VerticalOffset + rect.Top - document.PagePadding.Top);
-        if (Math.Abs(targetOffset - scrollViewer.VerticalOffset) < 1)
-            return;
-
-        scrollViewer.ScrollToVerticalOffset(targetOffset);
+        // Let FlowDocument perform its own scroll bookkeeping. Its
+        // GetCharacterRect coordinates switch between viewport-relative and
+        // document-relative while the block is off-screen; adding our own
+        // offset on top of BringIntoView made the preview land one block early.
+        block.BringIntoView();
+        scrollViewer.UpdateLayout();
     }
 
     private int GetCaretLine()
