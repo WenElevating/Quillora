@@ -30,6 +30,8 @@ Quillora 是一个面向 WPF 的 Markdown 写作工作台，用于编辑、预�
 
 - **实时分栏预览** - 左侧编辑 Markdown，右侧防抖渲染预览，并按块增量复用未变化的渲染结果。
 - **大文档首屏** - 数百个块以上的文档先挂载首屏内容，剩余块在后台分批补齐，不再整窗卡住。
+- **Typora 级排版** - 16px 正文、1.6 行高、居中 860px 阅读栏、Open Sans/Noto Sans SC 字体，以及 Typora 的标题比例和块间距。
+- **阅读模式** - 从视图菜单隐藏源文栏，在居中的页面中专注阅读。
 - **源文/预览联动** - 预览跟随光标所在块，高亮当前块；点击预览文字可跳到对应源文行。
 - **Quillora 品牌化** - 空文档窗口只显示品牌名，包含新的应用图标和安装器元数据。
 - **文件工作流** - 新建、打开、保存、另存为、打开文件夹、最近文件、快速打开、移动文件、删除文件、属性、在侧栏中显示、导入文本/Markdown、导出 HTML、打印。
@@ -119,6 +121,7 @@ Editor.MarkdownChanged += (_, e) =>
 | `Theme` | `EditorTheme` | `Light` | 当前编辑器和预览主题。 |
 | `ShowPreview` | `bool` | `true` | 显示或隐藏预览面板。 |
 | `PreviewWidth` | `GridLength` | `1*` | 预览面板宽度。 |
+| `ShowSource` | `bool` | `true` | 显示 Markdown 源文栏；设为 `false` 进入阅读模式。 |
 | `EnableScrollSync` | `bool` | `true` | 预览滚动跟随光标所在块。 |
 | `HighlightActiveBlock` | `bool` | `true` | 高亮光标所在的预览块。 |
 

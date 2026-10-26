@@ -30,6 +30,8 @@ Quillora is a WPF Markdown workspace for writing, previewing, translating, and e
 
 - **Live split preview** - Edit Markdown on the left and render a debounced preview on the right, with block-level incremental rendering that reuses unchanged blocks.
 - **Large-document first paint** - Documents with hundreds of blocks mount the first screen immediately and fill the rest in background chunks instead of freezing the window.
+- **Typora-grade typography** - 16px body text, 1.6 line height, a centered 860px reading column, Open Sans/Noto Sans SC fonts, and Typora's heading scale and block spacing.
+- **Reading mode** - Hide the source pane from the View menu and read the document in a centered, distraction-free preview.
 - **Source/preview sync** - The preview follows the caret block, highlights the current block, and clicking preview text jumps to the matching source line.
 - **Clean Quillora branding** - Brand-only empty-window title, refreshed app icon, and installer metadata.
 - **File workflows** - New/open/save/save as, open folder, recent files, quick open, move file, delete file, properties, show in sidebar, import text/Markdown, export HTML, and print.
@@ -119,6 +121,7 @@ Editor.MarkdownChanged += (_, e) =>
 | `Theme` | `EditorTheme` | `Light` | Current editor and preview theme. |
 | `ShowPreview` | `bool` | `true` | Shows or hides the preview pane. |
 | `PreviewWidth` | `GridLength` | `1*` | Width of the preview pane. |
+| `ShowSource` | `bool` | `true` | Shows the markdown source pane; set to `false` for reading mode. |
 | `EnableScrollSync` | `bool` | `true` | Scrolls the preview to the caret block. |
 | `HighlightActiveBlock` | `bool` | `true` | Highlights the preview block containing the caret. |
 

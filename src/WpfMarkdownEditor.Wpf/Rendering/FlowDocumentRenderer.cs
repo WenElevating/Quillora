@@ -330,9 +330,7 @@ public sealed class FlowDocumentRenderer
         document.FontSize = _theme.BaseFontSize;
         document.PagePadding = _theme.PagePadding;
         document.TextAlignment = TextAlignment.Left;
-        if (!double.IsNaN(_theme.LineHeight) && _theme.LineHeight > 0)
-            document.LineHeight = _theme.LineHeight;
-        else
-            document.ClearValue(FlowDocument.LineHeightProperty);
+        document.LineHeight = TypographyScale.ResolveBodyLineHeight(_theme);
+        document.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
     }
 }

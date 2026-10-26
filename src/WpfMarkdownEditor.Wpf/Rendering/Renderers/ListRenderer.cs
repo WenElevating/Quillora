@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
 using WpfMarkdownEditor.Core;
@@ -26,20 +27,19 @@ public sealed class ListRenderer(
 
     private List RenderList(ListBlock list, int level)
     {
-        var markerStyle = list.IsOrdered
-            ? TextMarkerStyle.Decimal
-            : GetUnorderedMarkerStyle(level);
+        var allTasks = list.Items.Count > 0 && list.Items.All(static item => item.IsTask);
+        var markerStyle = allTasks
+            ? TextMarkerStyle.None
+            : list.IsOrdered
+                ? TextMarkerStyle.Decimal
+                : GetUnorderedMarkerStyle(level);
 
         var listEl = new List
         {
             MarkerStyle = markerStyle,
-            Margin = new Thickness(0, 4, 0, 4),
-            Padding = new Thickness(theme.ListIndent, 0, 0, 0),
+            Margin = new Thickness(0, 0, 0, TypographyScale.BlockSpacing(theme)),
+            Padding = new Thickness(allTasks ? 0 : theme.ListIndent, 0, 0, 0),
         };
-
-        // Smaller markers for nested lists
-        if (level > 0)
-            listEl.FontSize = theme.BaseFontSize * 0.85;
 
         foreach (var item in list.Items)
         {
@@ -56,6 +56,23 @@ public sealed class ListRenderer(
                             FontSize = theme.BaseFontSize,
                             Margin = new Thickness(0),
                         };
+
+                        if (item.IsTask)
+                        {
+                            var checkbox = new CheckBox
+                            {
+                                IsChecked = item.IsTaskChecked,
+                                IsHitTestVisible = false,
+                                Focusable = false,
+                                VerticalAlignment = VerticalAlignment.Center,
+                                Margin = new Thickness(0, 0, 6, 0),
+                            };
+                            p.Inlines.Add(new InlineUIContainer(checkbox)
+                            {
+                                BaselineAlignment = BaselineAlignment.Center,
+                            });
+                        }
+
                         _inlineRenderer.RenderInlines(p, para.Inlines);
                         listItem.Blocks.Add(p);
                         break;

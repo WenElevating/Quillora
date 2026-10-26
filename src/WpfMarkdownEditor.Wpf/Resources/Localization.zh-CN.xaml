@@ -80,6 +80,7 @@
     <sys:String x:Key="Loc.MainWindow.Table">表格</sys:String>
     <sys:String x:Key="Loc.MainWindow.HorizontalRule">分隔线</sys:String>
     <sys:String x:Key="Loc.MainWindow.ToggleSidebar">切换侧边栏</sys:String>
+    <sys:String x:Key="Loc.MainWindow.ReadingMode">阅读模式</sys:String>
     <sys:String x:Key="Loc.MainWindow.Themes">主题</sys:String>
     <sys:String x:Key="Loc.MainWindow.Language">语言</sys:String>
     <sys:String x:Key="Loc.MainWindow.Files">文件</sys:String>

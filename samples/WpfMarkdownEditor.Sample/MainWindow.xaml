@@ -543,6 +543,10 @@
                                 Click="OnToggleSidebarFromMenu"
                                 Content="{DynamicResource Loc.MainWindow.ToggleSidebar}"
                                 Style="{StaticResource MenuItemStyle}" />
+                            <Button
+                                Click="OnToggleReadingMode"
+                                Content="{DynamicResource Loc.MainWindow.ReadingMode}"
+                                Style="{StaticResource MenuItemStyle}" />
                             <Border Style="{StaticResource MenuSeparatorStyle}" />
                             <TextBlock
                                 Style="{StaticResource MenuSectionHeaderStyle}"

@@ -11,6 +11,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private bool _isLoadingFile;
     private string _currentThemeName = "GitHub";
     private bool _isSidebarOpen;
+    private bool _isReadingMode;
     private string _statusKey = "Status.Ready";
     private object[] _statusArgs = [];
     private string _statusText;
@@ -64,6 +65,13 @@ public sealed class MainWindowViewModel : ObservableObject
     {
         get => _isSidebarOpen;
         set => SetProperty(ref _isSidebarOpen, value);
+    }
+
+    /// <summary>Reading mode hides the markdown source pane and shows the preview alone.</summary>
+    public bool IsReadingMode
+    {
+        get => _isReadingMode;
+        set => SetProperty(ref _isReadingMode, value);
     }
 
     public string StatusText

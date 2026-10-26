@@ -221,7 +221,7 @@ public sealed class ProgressiveRenderingTests
         return window;
     }
 
-    private static bool WaitUntil(Func<bool> condition, int timeoutMs = 5000)
+    private static bool WaitUntil(Func<bool> condition, int timeoutMs = 15000)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
 

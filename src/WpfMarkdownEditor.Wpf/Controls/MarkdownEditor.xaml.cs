@@ -19,6 +19,7 @@ public partial class MarkdownEditor : UserControl, IDisposable
     private readonly ImagePasteService _imagePasteService;
     private readonly SmartEditingController _smartEditing;
     private LocalizationService? _localizationService;
+    private GridLength _previewWidthBeforeReadingMode;
 
     #region DependencyProperties
 
@@ -49,6 +50,13 @@ public partial class MarkdownEditor : UserControl, IDisposable
             typeof(GridLength),
             typeof(MarkdownEditor),
             new PropertyMetadata(new GridLength(1, GridUnitType.Star)));
+
+    public static readonly DependencyProperty ShowSourceProperty =
+        DependencyProperty.Register(
+            nameof(ShowSource),
+            typeof(bool),
+            typeof(MarkdownEditor),
+            new PropertyMetadata(true, OnShowSourceChanged));
 
     public static readonly DependencyProperty DocumentPathProperty =
         DependencyProperty.Register(
@@ -97,6 +105,16 @@ public partial class MarkdownEditor : UserControl, IDisposable
     {
         get => (GridLength)GetValue(PreviewWidthProperty);
         set => SetValue(PreviewWidthProperty, value);
+    }
+
+    /// <summary>
+    /// Shows the markdown source pane. When false the preview takes the whole width
+    /// (reading mode).
+    /// </summary>
+    public bool ShowSource
+    {
+        get => (bool)GetValue(ShowSourceProperty);
+        set => SetValue(ShowSourceProperty, value);
     }
 
     public string? DocumentPath
@@ -426,6 +444,28 @@ public partial class MarkdownEditor : UserControl, IDisposable
     {
         var editor = (MarkdownEditor)d;
         editor._previewController.OnDocumentPathChanged();
+    }
+
+    private static void OnShowSourceChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var editor = (MarkdownEditor)d;
+        var showSource = (bool)e.NewValue;
+
+        if (showSource)
+        {
+            editor.SourceColumn.Width = new GridLength(1, GridUnitType.Star);
+            editor.EditorSplitter.Visibility = Visibility.Visible;
+            editor.PreviewToolbarBorder.Visibility = Visibility.Visible;
+            editor.PreviewWidth = editor._previewWidthBeforeReadingMode;
+        }
+        else
+        {
+            editor._previewWidthBeforeReadingMode = editor.PreviewWidth;
+            editor.SourceColumn.Width = new GridLength(0);
+            editor.EditorSplitter.Visibility = Visibility.Collapsed;
+            editor.PreviewToolbarBorder.Visibility = Visibility.Collapsed;
+            editor.PreviewWidth = new GridLength(1, GridUnitType.Star);
+        }
     }
 
     private static void OnViewportOptionsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)

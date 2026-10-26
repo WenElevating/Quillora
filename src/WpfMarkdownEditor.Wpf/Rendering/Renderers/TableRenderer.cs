@@ -22,7 +22,7 @@ public sealed class TableRenderer(
         var table = (TableBlock)block;
         var tableEl = new Table
         {
-            Margin = new Thickness(0, 8, 0, 8),
+            Margin = new Thickness(0, 0, 0, TypographyScale.BlockSpacing(theme)),
             BorderBrush = EditorBrushCache.Get(theme.TableBorderColor),
             BorderThickness = new Thickness(1),
             CellSpacing = 0,
@@ -44,6 +44,7 @@ public sealed class TableRenderer(
             var headerPara = new Paragraph
             {
                 FontWeight = FontWeights.Bold,
+                TextAlignment = GetAlignment(table, i),
                 Padding = new Thickness(13, 6, 13, 6),
                 BorderBrush = EditorBrushCache.Get(theme.TableBorderColor),
                 BorderThickness = new Thickness(0, 0, 1, 1),
@@ -69,9 +70,10 @@ public sealed class TableRenderer(
                 var text = i < row.Count ? row[i] : "";
                 var dataPara = new Paragraph
                 {
+                    TextAlignment = GetAlignment(table, i),
                     Padding = new Thickness(13, 6, 13, 6),
                     BorderBrush = EditorBrushCache.Get(theme.TableBorderColor),
-                    BorderThickness = new Thickness(0, 0, 1, 0),
+                    BorderThickness = new Thickness(0, 0, 1, 1),
                 };
                 _inlineRenderer.RenderInlines(dataPara, _markdownParser.ParseInlines(text));
                 dataRow.Cells.Add(new TableCell(dataPara));
@@ -83,4 +85,14 @@ public sealed class TableRenderer(
         tableEl.RowGroups.Add(rg);
         return tableEl;
     }
+
+    private static TextAlignment GetAlignment(TableBlock table, int column) =>
+        column < table.Alignments.Count
+            ? table.Alignments[column] switch
+            {
+                TableBlock.TableAlignment.Center => TextAlignment.Center,
+                TableBlock.TableAlignment.Right => TextAlignment.Right,
+                _ => TextAlignment.Left,
+            }
+            : TextAlignment.Left;
 }

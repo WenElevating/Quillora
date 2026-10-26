@@ -13,12 +13,15 @@ public sealed class CodeBlockRenderer(EditorTheme theme, SyntaxHighlighter? high
     public System.Windows.Documents.Block Render(Core.Parsing.Block block)
     {
         var code = (CodeBlock)block;
+        var fontSize = theme.BaseFontSize * theme.CodeFontScale;
         var paragraph = new Paragraph
         {
             FontFamily = theme.CodeFont,
-            FontSize = 13,
+            FontSize = fontSize,
+            LineHeight = fontSize * 1.45,
+            LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
             Foreground = EditorBrushCache.Get(theme.CodeForeground),
-            Padding = new Thickness(16, 12, 16, 12),
+            Padding = new Thickness(12, 8, 12, 6),
             Margin = new Thickness(0),
         };
 
@@ -40,7 +43,7 @@ public sealed class CodeBlockRenderer(EditorTheme theme, SyntaxHighlighter? high
             BorderBrush = EditorBrushCache.Get(theme.CodeBlockBorderColor),
             BorderThickness = new Thickness(1),
             Padding = new Thickness(0),
-            Margin = new Thickness(0, 8, 0, 8),
+            Margin = new Thickness(0, 0, 0, TypographyScale.BlockSpacing(theme)),
         };
         section.Blocks.Add(paragraph);
         return section;

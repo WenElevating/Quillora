@@ -9,7 +9,7 @@
             </ResourceDictionary.MergedDictionaries>
             
             <!-- Windows 11 Typography -->
-            <FontFamily x:Key="UIFont">Microsoft YaHei UI, Microsoft YaHei, Segoe UI</FontFamily>
+            <FontFamily x:Key="UIFont">Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI</FontFamily>
             <FontFamily x:Key="CodeFont">Cascadia Code, Consolas</FontFamily>
 
             <!-- Windows 11 Light Theme Brushes -->

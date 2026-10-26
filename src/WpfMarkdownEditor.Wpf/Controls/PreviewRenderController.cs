@@ -35,6 +35,7 @@ internal sealed class PreviewRenderController : IDisposable
     private readonly Func<string> _baseDirectoryProvider;
     private readonly PreviewViewportController? _viewportController;
     private readonly CodeBlockHighlightScheduler _codeHighlighter;
+    private readonly PreviewPageLayoutController _pageLayout;
     private readonly Action<PreviewRenderedEventArgs>? _onRendered;
 
     private ImageLoader _imageLoader;
@@ -68,6 +69,7 @@ internal sealed class PreviewRenderController : IDisposable
         _imageLoader = new ImageLoader(baseDirectoryProvider());
         _imageResolver = new CachingImageResolver(_imageLoader);
         _codeHighlighter = new CodeBlockHighlightScheduler(previewViewer, RequestPreviewLayoutRefresh);
+        _pageLayout = new PreviewPageLayoutController(previewViewer, themeProvider);
 
         _debounceTimer = new DispatcherTimer(DispatcherPriority.Background, previewViewer.Dispatcher)
         {
@@ -297,6 +299,7 @@ internal sealed class PreviewRenderController : IDisposable
 
             _previewDocument = document;
             _previewViewer.Document = document;
+            _pageLayout.Apply();
             if (anchor is { } captured)
                 _viewportController?.RestoreAnchor(captured);
             _viewportController?.OnAfterRender();
@@ -354,6 +357,7 @@ internal sealed class PreviewRenderController : IDisposable
         _progressiveSession = session;
         _previewDocument = document;
         _previewViewer.Document = document;
+        _pageLayout.Apply();
         LastFirstPaintElapsedMs = session.FirstPaintElapsedMs;
 
         if (anchor is { } captured)
@@ -614,6 +618,7 @@ internal sealed class PreviewRenderController : IDisposable
     {
         _disposed = true;
         _progressiveSession = null;
+        _pageLayout.Dispose();
         _codeHighlighter.Dispose();
         _imageLoader.Dispose();
         _debounceTimer.Stop();

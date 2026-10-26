@@ -206,7 +206,7 @@
 
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="1*" />
+            <ColumnDefinition x:Name="SourceColumn" Width="1*" />
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="{Binding PreviewWidth, RelativeSource={RelativeSource AncestorType=UserControl}}" />
         </Grid.ColumnDefinitions>
@@ -224,9 +224,9 @@
                  Text="{Binding Markdown, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                  TextChanged="OnEditorTextChanged"
                  FontFamily="Cascadia Code, Consolas, Liberation Mono"
-                 FontSize="14"
+                 FontSize="14.5"
                  BorderThickness="0"
-                 Padding="12,8">
+                 Padding="24,20">
             <TextBox.Resources>
                 <Style TargetType="ScrollBar" BasedOn="{StaticResource DocumentScrollBarStyle}"/>
             </TextBox.Resources>
@@ -268,7 +268,6 @@
               Visibility="{Binding ShowPreview, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVisibilityConverter}}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <!-- Document Viewer -->
@@ -276,17 +275,24 @@
                                       Grid.Row="0"
                                       AutomationProperties.AutomationId="MarkdownEditor_PreviewViewer"
                                       IsToolBarVisible="False"
-                                      VerticalScrollBarVisibility="Auto">
+                                      VerticalScrollBarVisibility="Auto"
+                                      TextOptions.TextFormattingMode="Ideal"
+                                      TextOptions.TextHintingMode="Auto"
+                                      TextOptions.TextRenderingMode="ClearType">
                 <FlowDocumentScrollViewer.Resources>
                     <Style TargetType="ScrollBar" BasedOn="{StaticResource DocumentScrollBarStyle}"/>
                 </FlowDocumentScrollViewer.Resources>
             </FlowDocumentScrollViewer>
 
-            <!-- Modern Preview Toolbar -->
+            <!-- Floating zoom capsule; does not consume a separate footer row. -->
             <Border x:Name="PreviewToolbarBorder"
-                    Grid.Row="1"
-                    BorderThickness="0,1,0,0"
-                    Padding="8,4,8,4">
+                    Grid.Row="0"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Bottom"
+                    Margin="0,0,8,8"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="6,2,6,2">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
 
                     <!-- Zoom Out -->

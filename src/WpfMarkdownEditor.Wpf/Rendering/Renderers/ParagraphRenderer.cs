@@ -18,7 +18,6 @@ public sealed class ParagraphRenderer(
     Action? requestLayoutRefresh = null) : IBlockRenderer
 {
     private readonly InlineRenderer _inlineRenderer = new(theme, imageResolver, requestLayoutRefresh);
-    private double ImageSpacingBottom => Math.Max(theme.ParagraphSpacing, 20);
 
     public System.Windows.Documents.Block Render(Core.Parsing.Block block)
     {
@@ -32,7 +31,7 @@ public sealed class ParagraphRenderer(
             FontFamily = theme.BodyFont,
             Foreground = EditorBrushCache.Get(theme.ForegroundColor),
             TextAlignment = TextAlignment.Left,
-            Margin = new Thickness(0, 0, 0, para.Inlines.Any(static inline => inline is ImageInline) ? ImageSpacingBottom : theme.ParagraphSpacing),
+            Margin = TypographyScale.ParagraphMargin(theme),
         };
 
         _inlineRenderer.RenderInlines(paragraph, para.Inlines);
@@ -125,7 +124,7 @@ public sealed class ParagraphRenderer(
         var imageControl = ImageElementFactory.CreateBitmapImageControl(
             bitmap,
             img.Alt,
-            400,
+            double.PositiveInfinity,
             alignLeft: true,
             img.DisplayWidth,
             img.DisplayHeight);
@@ -195,7 +194,7 @@ public sealed class ParagraphRenderer(
                 var imageControl = ImageElementFactory.CreateBitmapImageControl(
                     bitmap,
                     img.Alt,
-                    400,
+                    double.PositiveInfinity,
                     alignLeft: true,
                     img.DisplayWidth,
                     img.DisplayHeight);
@@ -208,7 +207,7 @@ public sealed class ParagraphRenderer(
         }
     }
 
-    private Thickness CreateImageMargin() => new(0, 8, 0, ImageSpacingBottom);
+    private Thickness CreateImageMargin() => new(0, 8, 0, TypographyScale.BlockSpacing(theme));
 
     private BlockUIContainer CreateImageBlockContainer(UIElement child) => new(child)
     {

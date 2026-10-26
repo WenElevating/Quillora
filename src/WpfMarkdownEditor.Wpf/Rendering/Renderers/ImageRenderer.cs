@@ -23,7 +23,7 @@ public sealed class ImageRenderer(
         var image = (ImageBlock)block;
         var container = new BlockUIContainer
         {
-            Margin = new Thickness(0, 8, 0, Math.Max(theme.ParagraphSpacing, 20)),
+            Margin = new Thickness(0, 8, 0, TypographyScale.BlockSpacing(theme)),
             TextAlignment = TextAlignment.Left,
         };
 
@@ -91,7 +91,11 @@ public sealed class ImageRenderer(
 
             await host.Dispatcher.InvokeAsync(() =>
             {
-                var imageControl = ImageElementFactory.CreateBitmapImageControl(bitmap, image.Alt, 400, alignLeft: true);
+                var imageControl = ImageElementFactory.CreateBitmapImageControl(
+                    bitmap,
+                    image.Alt,
+                    double.PositiveInfinity,
+                    alignLeft: true);
                 RefreshLoadedImage(host, imageControl, requestLayoutRefresh);
             });
         }

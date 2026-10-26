@@ -68,6 +68,13 @@ public partial class MainWindow
         AnimateSidebar(_viewModel.IsSidebarOpen ? SidebarWidth : 0);
     }
 
+    private void OnToggleReadingMode(object sender, RoutedEventArgs e)
+    {
+        ViewPopup.IsOpen = false;
+        _viewModel.IsReadingMode = !_viewModel.IsReadingMode;
+        Editor.ShowSource = !_viewModel.IsReadingMode;
+    }
+
     private void ShowSearchPanel()
     {
         UpdateSearchPanelPosition();

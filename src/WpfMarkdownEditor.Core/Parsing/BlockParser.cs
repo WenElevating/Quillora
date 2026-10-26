@@ -392,6 +392,8 @@ internal sealed class BlockParser
                 itemText = stripped[2..].TrimStart();
             }
 
+            var isTask = TryStripTaskMarker(ref itemText, out var isTaskChecked);
+
             reader.ReadLine();
             endLine = peeked.LineNumber;
 
@@ -444,7 +446,12 @@ internal sealed class BlockParser
                 });
             }
 
-            items.Add(new ListItem { Blocks = itemBlocks });
+            items.Add(new ListItem
+            {
+                Blocks = itemBlocks,
+                IsTask = isTask,
+                IsTaskChecked = isTaskChecked,
+            });
         }
 
         return new ListBlock
@@ -467,6 +474,24 @@ internal sealed class BlockParser
             LineEnd = lineEnd
         });
         itemText = "";
+    }
+
+    private static bool TryStripTaskMarker(ref string itemText, out bool isChecked)
+    {
+        isChecked = false;
+        if (itemText.Length < 3 || itemText[0] != '[' || itemText[2] != ']')
+            return false;
+
+        var state = itemText[1];
+        if (state is not (' ' or 'x' or 'X'))
+            return false;
+
+        if (itemText.Length > 3 && itemText[3] != ' ')
+            return false;
+
+        isChecked = state is 'x' or 'X';
+        itemText = itemText.Length > 3 ? itemText[4..].TrimStart() : string.Empty;
+        return true;
     }
 
     private static bool TryParseOrderedListStart(string stripped, out int startNum)

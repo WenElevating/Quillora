@@ -14,11 +14,11 @@ public sealed class BlockquoteRenderer(EditorTheme theme, FlowDocumentRenderer p
         var bq = (BlockquoteBlock)block;
         var section = new Section
         {
-            Background = EditorBrushCache.Get(theme.BlockquoteBackground),
+            Foreground = EditorBrushCache.Get(theme.BlockquoteForeground),
             BorderBrush = EditorBrushCache.Get(theme.BlockquoteBorder),
             BorderThickness = new Thickness(theme.BlockquoteBorderWidth, 0, 0, 0),
-            Padding = new Thickness(theme.BlockquotePaddingLeft, 8, 16, 8),
-            Margin = new Thickness(0, 4, 0, 4),
+            Padding = new Thickness(theme.BlockquotePaddingLeft, 0, 0, 0),
+            Margin = new Thickness(0, 0, 0, TypographyScale.BlockSpacing(theme)),
         };
 
         foreach (var child in bq.Children)

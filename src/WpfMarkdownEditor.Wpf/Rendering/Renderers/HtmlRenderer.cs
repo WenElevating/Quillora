@@ -155,7 +155,7 @@ public sealed class HtmlRenderer(
             FontFamily = theme.BodyFont,
             Foreground = EditorBrushCache.Get(theme.ForegroundColor),
             TextAlignment = alignment,
-            Margin = new Thickness(0, 0, 0, theme.ParagraphSpacing),
+            Margin = TypographyScale.ParagraphMargin(theme),
         };
         RenderInlineNodes(paragraph.Inlines, nodes);
         return paragraph;
@@ -177,11 +177,13 @@ public sealed class HtmlRenderer(
         var paragraph = new Paragraph
         {
             FontFamily = theme.HeadingFont,
-            Foreground = EditorBrushCache.Get(theme.HeadingColor),
-            FontSize = GetHeadingFontSize(level),
+            Foreground = EditorBrushCache.Get(level == 6 ? theme.MutedHeadingColor : theme.HeadingColor),
+            FontSize = TypographyScale.HeadingFontSize(theme, level),
             FontWeight = FontWeights.Bold,
+            LineHeight = TypographyScale.HeadingLineHeight(theme, level),
+            LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
             TextAlignment = alignment,
-            Margin = new Thickness(0, theme.HeadingMarginTop, 0, theme.HeadingMarginBottom),
+            Margin = TypographyScale.HeadingMargin(theme),
         };
         RenderInlineNodes(paragraph.Inlines, element.Children);
         return paragraph;
@@ -206,7 +208,7 @@ public sealed class HtmlRenderer(
         var table = new Table
         {
             CellSpacing = 0,
-            Margin = new Thickness(0, 8, 0, theme.ParagraphSpacing),
+            Margin = new Thickness(0, 0, 0, TypographyScale.BlockSpacing(theme)),
             BorderBrush = EditorBrushCache.Get(theme.TableBorderColor),
             BorderThickness = new Thickness(1),
         };
@@ -314,7 +316,7 @@ public sealed class HtmlRenderer(
         var span = new Span
         {
             FontFamily = theme.CodeFont,
-            FontSize = 13,
+            FontSize = theme.BaseFontSize * theme.InlineCodeFontScale,
             Background = EditorBrushCache.Get(theme.InlineCodeBackground),
             Foreground = EditorBrushCache.Get(theme.InlineCodeForeground),
         };
@@ -469,17 +471,6 @@ public sealed class HtmlRenderer(
             ? TextAlignment.Center
             : fallback;
     }
-
-    private double GetHeadingFontSize(int level) => level switch
-    {
-        1 => Math.Round(theme.BaseFontSize * 1.85),
-        2 => Math.Round(theme.BaseFontSize * 1.5),
-        3 => Math.Round(theme.BaseFontSize * 1.25),
-        4 => Math.Round(theme.BaseFontSize * 1.1),
-        5 => theme.BaseFontSize,
-        6 => theme.BaseFontSize,
-        _ => theme.BaseFontSize,
-    };
 
     private static bool IsBlockElement(string tagName) =>
         tagName is "div" or "center" or "details" or "p" or "summary" or "table" or

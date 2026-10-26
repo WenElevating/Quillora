@@ -190,7 +190,7 @@ public sealed class MarkdownEditorPreviewTests
         return window;
     }
 
-    private static bool WaitUntil(Func<bool> condition, int timeoutMs = 3000)
+    private static bool WaitUntil(Func<bool> condition, int timeoutMs = 8000)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
 

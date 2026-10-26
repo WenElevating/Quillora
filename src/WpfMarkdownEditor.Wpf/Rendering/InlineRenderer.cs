@@ -82,7 +82,7 @@ public sealed class InlineRenderer
         CodeInline c => new Span(new Run(c.Code))
         {
             FontFamily = _theme.CodeFont,
-            FontSize = 13,
+            FontSize = _theme.BaseFontSize * _theme.InlineCodeFontScale,
             Background = EditorBrushCache.Get(_theme.InlineCodeBackground),
             Foreground = EditorBrushCache.Get(_theme.InlineCodeForeground),
         },

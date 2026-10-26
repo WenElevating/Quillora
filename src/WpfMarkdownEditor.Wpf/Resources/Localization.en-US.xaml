@@ -80,6 +80,7 @@
     <sys:String x:Key="Loc.MainWindow.Table">Table</sys:String>
     <sys:String x:Key="Loc.MainWindow.HorizontalRule">Horizontal Rule</sys:String>
     <sys:String x:Key="Loc.MainWindow.ToggleSidebar">Toggle Sidebar</sys:String>
+    <sys:String x:Key="Loc.MainWindow.ReadingMode">Reading Mode</sys:String>
     <sys:String x:Key="Loc.MainWindow.Themes">Themes</sys:String>
     <sys:String x:Key="Loc.MainWindow.Language">Language</sys:String>
     <sys:String x:Key="Loc.MainWindow.Files">Files</sys:String>

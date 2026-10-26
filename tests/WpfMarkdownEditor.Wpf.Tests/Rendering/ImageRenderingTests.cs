@@ -375,7 +375,7 @@ public sealed class ImageRenderingTests
             foreach (var paragraph in paragraphs)
             {
                 Assert.Equal(8, paragraph.Margin.Top);
-                Assert.True(paragraph.Margin.Bottom >= 20);
+                Assert.Equal(12.8, paragraph.Margin.Bottom, precision: 2);
                 Assert.Equal(1, CountInlines<Hyperlink>(paragraph.Inlines.Cast<System.Windows.Documents.Inline>()));
             }
 
