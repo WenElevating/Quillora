@@ -43,6 +43,9 @@ internal sealed class TableSelectionController : IDisposable
     private TableCellView? _caretCell;
     private TextPointer? _caretPosition;
 
+    private WeakReference<Window>? _hookedWindow;
+    private bool _windowDismissHookAttached;
+
     private TableCellView? _dragCandidateCell;
     private Point _dragOrigin;
     private Point _pendingPoint;
@@ -121,6 +124,9 @@ internal sealed class TableSelectionController : IDisposable
         {
             cell.Editor.Tag = this;
             cell.Editor.ContextMenuOpening += OnContextMenuOpening;
+            // Tab or programmatic focus moves out of the table must drop the
+            // selection the same way a click inside the table would.
+            cell.Editor.LostKeyboardFocus += OnCellLostKeyboardFocus;
         }
     }
 
@@ -284,10 +290,12 @@ internal sealed class TableSelectionController : IDisposable
         _tableRoot.PreviewKeyDown -= OnPreviewKeyDown;
         _tableRoot.ContextMenuOpening -= OnContextMenuOpening;
         _tableRoot.Unloaded -= OnUnloaded;
+        DetachWindowDismissHook();
 
         foreach (var cell in _cells)
         {
             cell.Editor.ContextMenuOpening -= OnContextMenuOpening;
+            cell.Editor.LostKeyboardFocus -= OnCellLostKeyboardFocus;
             cell.Editor.Tag = null;
         }
     }
@@ -532,7 +540,74 @@ internal sealed class TableSelectionController : IDisposable
         menu.Items.Insert(0, copySelection);
     }
 
-    private void OnUnloaded(object sender, RoutedEventArgs e) => ClearSelection();
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        DetachWindowDismissHook();
+        ClearSelection();
+    }
+
+    /// <summary>
+    /// A click anywhere outside the table never reaches the table's own mouse
+    /// handlers, so the window-level preview hook dismisses the selection. The
+    /// right mouse button is ignored so the cell context menu stays usable.
+    /// </summary>
+    private void AttachWindowDismissHook()
+    {
+        if (_windowDismissHookAttached || _disposed)
+            return;
+
+        var window = Window.GetWindow(_tableRoot);
+        if (window is null)
+            return;
+
+        window.PreviewMouseLeftButtonDown += OnWindowPreviewMouseLeftButtonDown;
+        _hookedWindow = new WeakReference<Window>(window);
+        _windowDismissHookAttached = true;
+    }
+
+    private void DetachWindowDismissHook()
+    {
+        if (!_windowDismissHookAttached)
+            return;
+
+        if (_hookedWindow is not null && _hookedWindow.TryGetTarget(out var window))
+            window.PreviewMouseLeftButtonDown -= OnWindowPreviewMouseLeftButtonDown;
+
+        _hookedWindow = null;
+        _windowDismissHookAttached = false;
+    }
+
+    private void OnWindowPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left)
+            return;
+
+        if (!HasSelection && _anchorCell is null)
+        {
+            DetachWindowDismissHook();
+            return;
+        }
+
+        if (IsTableSource(e.OriginalSource as DependencyObject))
+            return;
+
+        ClearSelection();
+        DetachWindowDismissHook();
+    }
+
+    private void OnCellLostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (_dragging || _completingDrag)
+            return;
+
+        // Focus moving between the table's own editors (for example while the drag
+        // selects cells) keeps the selection; only leaving the table clears it.
+        if (_tableRoot.IsKeyboardFocusWithin)
+            return;
+
+        if (HasSelection)
+            ClearSelection();
+    }
 
     private void UpdateSelection()
     {
@@ -594,6 +669,7 @@ internal sealed class TableSelectionController : IDisposable
             _selectedCells.Add(_cells[i]);
 
         RenderSelectionOverlay();
+        AttachWindowDismissHook();
     }
 
     /// <summary>

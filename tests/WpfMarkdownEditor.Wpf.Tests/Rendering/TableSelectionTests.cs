@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Input;
 using WpfMarkdownEditor.Core.Parsing;
 using WpfMarkdownEditor.Wpf.Controls;
 using WpfMarkdownEditor.Wpf.Rendering;
@@ -298,6 +299,147 @@ public sealed class TableSelectionTests
             var paragraph = Assert.IsType<Paragraph>(
                 controller.Cells[0].Editor.Document.Blocks.First());
             Assert.True(TableSelectionController.IsTableSource(paragraph));
+        });
+    }
+
+    [Fact]
+    public void ClearSelection_WhenKeyboardFocusLeavesTheTable()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var (border, controller, window) = RenderTableInWindow(
+                "| A | B |\n| --- | --- |\n| 1 | 2 |");
+            try
+            {
+                controller.SelectCells(0, 3);
+                // A real selection always comes from a click inside a cell, which
+                // focuses that cell's editor. Establish the same state first.
+                controller.Cells[0].Editor.Focus();
+                window.UpdateLayout();
+                Assert.True(controller.HasSelection);
+
+                // Simulate clicking outside the table: focus moves to another element
+                // and the table keeps no keyboard focus anymore. The table border
+                // belongs to the document, so re-parent the viewer instead.
+                var outside = new TextBox();
+                var viewer = (FlowDocumentScrollViewer)window.Content;
+                window.Content = null;
+                var dock = new DockPanel();
+                DockPanel.SetDock(outside, Dock.Top);
+                dock.Children.Add(outside);
+                dock.Children.Add(viewer);
+                window.Content = dock;
+                window.UpdateLayout();
+
+                outside.Focus();
+                window.UpdateLayout();
+
+                // In an inactive test window keyboard focus stays wherever the OS put
+                // it; the meaningful check is where the window's logical focus sits.
+                Assert.False(controller.Cells[0].Editor.IsFocused);
+                Assert.False(controller.HasSelection);
+                Assert.All(controller.Cells, cell => Assert.True(cell.Editor.Selection.IsEmpty));
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void Selection_SurvivesFocusMovingInsideTheTable()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var (border, controller, window) = RenderTableInWindow(
+                "| A | B |\n| --- | --- |\n| 1 | 2 |");
+            try
+            {
+                controller.SelectCells(0, 3);
+
+                // Focus moving between the table's own editors must not clear it.
+                controller.Cells[3].Editor.Focus();
+                window.UpdateLayout();
+
+                Assert.True(controller.HasSelection);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void ClearSelection_WhenMouseClicksOutsideTheTable()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var (border, controller, window) = RenderTableInWindow(
+                "| A | B |\n| --- | --- |\n| 1 | 2 |");
+            try
+            {
+                controller.SelectCells(0, 3);
+                controller.Cells[0].Editor.Focus();
+                window.UpdateLayout();
+                Assert.True(controller.HasSelection);
+
+                // The window-level dismiss hook must clear the selection when a
+                // left click lands outside the table border. Raise the same routed
+                // event the OS would deliver for a real click on the window.
+                var click = new MouseButtonEventArgs(
+                    InputManager.Current.PrimaryMouseDevice,
+                    Environment.TickCount,
+                    MouseButton.Left)
+                {
+                    RoutedEvent = UIElement.PreviewMouseLeftButtonDownEvent,
+                    Source = window,
+                };
+                window.RaiseEvent(click);
+
+                Assert.False(controller.HasSelection);
+                Assert.All(controller.Cells, cell => Assert.True(cell.Editor.Selection.IsEmpty));
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void ClearSelection_IgnoresRightButtonOutsideTheTable()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var (border, controller, window) = RenderTableInWindow(
+                "| A | B |\n| --- | --- |\n| 1 | 2 |");
+            try
+            {
+                controller.SelectCells(0, 3);
+                controller.Cells[0].Editor.Focus();
+                window.UpdateLayout();
+                Assert.True(controller.HasSelection);
+
+                // Right click outside must keep the selection so the context menu
+                // stays usable on the selection itself.
+                var click = new MouseButtonEventArgs(
+                    InputManager.Current.PrimaryMouseDevice,
+                    Environment.TickCount,
+                    MouseButton.Right)
+                {
+                    RoutedEvent = UIElement.PreviewMouseLeftButtonDownEvent,
+                    Source = window,
+                };
+                window.RaiseEvent(click);
+
+                Assert.True(controller.HasSelection);
+            }
+            finally
+            {
+                window.Close();
+            }
         });
     }
 
