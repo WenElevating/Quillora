@@ -589,6 +589,13 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnToggleIntegratedMode(object sender, EventArgs e)
+    {
+        Editor.IntegratedMode = !Editor.IntegratedMode;
+        if (Editor.IntegratedMode)
+            Editor.Focus();
+    }
+
     private async Task ImportFileIntoDocumentAsync()
     {
         var dialog = new OpenFileDialog

@@ -547,6 +547,10 @@
                                 Click="OnToggleReadingMode"
                                 Content="{DynamicResource Loc.MainWindow.ReadingMode}"
                                 Style="{StaticResource MenuItemStyle}" />
+                            <Button
+                                Click="OnToggleIntegratedMode"
+                                Content="{DynamicResource Loc.MainWindow.IntegratedMode}"
+                                Style="{StaticResource MenuItemStyle}" />
                             <Border Style="{StaticResource MenuSeparatorStyle}" />
                             <TextBlock
                                 Style="{StaticResource MenuSectionHeaderStyle}"

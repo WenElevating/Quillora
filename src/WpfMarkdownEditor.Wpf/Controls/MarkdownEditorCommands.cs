@@ -50,4 +50,13 @@ public static class MarkdownEditorCommands
         "Insert Hard Line Break",
         nameof(InsertHardLineBreak),
         typeof(MarkdownEditorCommands));
+
+    public static readonly RoutedUICommand ToggleIntegratedMode = new(
+        "Toggle Integrated Mode",
+        nameof(ToggleIntegratedMode),
+        typeof(MarkdownEditorCommands),
+        new InputGestureCollection
+        {
+            new KeyGesture(Key.I, ModifierKeys.Control | ModifierKeys.Shift),
+        });
 }

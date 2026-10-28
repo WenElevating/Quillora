@@ -208,8 +208,51 @@
         <Grid.ColumnDefinitions>
             <ColumnDefinition x:Name="SourceColumn" Width="1*" />
             <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="{Binding PreviewWidth, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+            <ColumnDefinition x:Name="PreviewColumn"
+                              Width="{Binding PreviewWidth, RelativeSource={RelativeSource AncestorType=UserControl}}" />
         </Grid.ColumnDefinitions>
+
+        <!-- Integrated Mode Panel (overlay, hidden by default) -->
+        <Border x:Name="IntegratedModePanel"
+                Grid.ColumnSpan="3"
+                Visibility="Collapsed"
+                Background="{DynamicResource EditorBackgroundColor}">
+            <Grid>
+                <!-- Bottom layer: rendered preview -->
+                <FlowDocumentScrollViewer x:Name="IntegratedPreviewViewer"
+                                          IsToolBarVisible="False"
+                                          VerticalScrollBarVisibility="Auto"
+                                          TextOptions.TextFormattingMode="Ideal"
+                                          TextOptions.TextHintingMode="Auto"
+                                          TextOptions.TextRenderingMode="ClearType">
+                    <FlowDocumentScrollViewer.Resources>
+                        <Style TargetType="ScrollBar" BasedOn="{StaticResource DocumentScrollBarStyle}"/>
+                    </FlowDocumentScrollViewer.Resources>
+                </FlowDocumentScrollViewer>
+
+                <!-- Top layer: transparent source TextBox -->
+                <TextBox x:Name="IntegratedSource"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         AcceptsReturn="True"
+                         AcceptsTab="True"
+                         TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto"
+                         HorizontalScrollBarVisibility="Disabled"
+                         FontFamily="Cascadia Code, Consolas, Liberation Mono"
+                         FontSize="14.5"
+                         Padding="24,20"
+                         Foreground="Transparent"
+                         CaretBrush="{DynamicResource EditorCaretColor}"
+                         TextChanged="OnIntegratedSourceTextChanged"
+                         PreviewKeyDown="OnEditorPreviewKeyDown"
+                         SelectionChanged="OnIntegratedSourceSelectionChanged"
+                         LostKeyboardFocus="OnIntegratedSourceLostFocus"
+                         GotKeyboardFocus="OnIntegratedSourceGotFocus"
+                         MouseDown="OnIntegratedSourceMouseDown"
+                         PreviewMouseWheel="OnIntegratedSourcePreviewMouseWheel"/>
+            </Grid>
+        </Border>
 
         <!-- Editor Pane -->
         <TextBox x:Name="EditorTextBox"
