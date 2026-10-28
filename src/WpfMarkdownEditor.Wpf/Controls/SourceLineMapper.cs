@@ -65,12 +65,17 @@ internal static class SourceLineMapper
     /// Character offset where the 1-based source line starts. Clamps to the text end
     /// when the document has fewer lines than requested.
     /// </summary>
-    public static int GetOffsetOfSourceLine(TextBox textBox, int line)
+    public static int GetOffsetOfSourceLine(TextBox textBox, int line) =>
+        GetOffsetOfLine(textBox.Text, line);
+
+    /// <summary>
+    /// Character offset where the 1-based line starts in <paramref name="text"/>.
+    /// </summary>
+    public static int GetOffsetOfLine(string text, int line)
     {
-        if (line <= 1)
+        if (line <= 1 || string.IsNullOrEmpty(text))
             return 0;
 
-        var text = textBox.Text;
         var remaining = line - 1;
         for (var i = 0; i < text.Length; i++)
         {
@@ -83,5 +88,19 @@ internal static class SourceLineMapper
         }
 
         return text.Length;
+    }
+
+    /// <summary>
+    /// Character offset just past the content of the 1-based line, before its line
+    /// terminator. Used to splice an edited block back into the document.
+    /// </summary>
+    public static int GetContentEndOfLine(string text, int line)
+    {
+        var start = GetOffsetOfLine(text, line);
+        var index = start;
+        while (index < text.Length && text[index] is not ('\r' or '\n'))
+            index++;
+
+        return index;
     }
 }

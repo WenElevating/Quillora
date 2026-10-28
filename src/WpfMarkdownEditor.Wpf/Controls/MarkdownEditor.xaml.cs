@@ -22,8 +22,8 @@ public partial class MarkdownEditor : UserControl, IDisposable
     private readonly SmartEditingController _smartEditing;
     private LocalizationService? _localizationService;
     private GridLength _previewWidthBeforeReadingMode;
-    private IntegratedPreviewSyncService? _integratedSyncService;
-    private bool _isSyncingScroll;
+    private PreviewRenderController? _integratedRenderController;
+    private IntegratedBlockEditor? _integratedBlockEditor;
 
     #region DependencyProperties
 
@@ -457,6 +457,7 @@ public partial class MarkdownEditor : UserControl, IDisposable
         var editor = (MarkdownEditor)d;
         var theme = (EditorTheme)e.NewValue;
         editor._previewController.OnThemeChanged();
+        editor._integratedBlockEditor?.ApplyTheme();
         EditorChromeTheme.Apply(editor, theme);
     }
 
@@ -501,49 +502,56 @@ public partial class MarkdownEditor : UserControl, IDisposable
         var editor = (MarkdownEditor)d;
         var mode = (bool)e.NewValue;
 
+        // The integrated panel is the last child of the root grid, so showing it covers
+        // the split view without changing any column widths or bindings.
         if (mode)
         {
-            editor._previewWidthBeforeReadingMode = editor.PreviewWidth;
-            editor.SourceColumn.Width = new GridLength(0);
-            editor.EditorSplitter.Visibility = Visibility.Collapsed;
-            editor.PreviewToolbarBorder.Visibility = Visibility.Collapsed;
-            editor.PreviewWidth = new GridLength(1, GridUnitType.Star);
             editor.IntegratedModePanel.Visibility = Visibility.Visible;
             editor.InitializeIntegratedMode();
         }
         else
         {
-            editor.IntegratedModePanel.Visibility = Visibility.Collapsed;
-            editor.SourceColumn.Width = new GridLength(1, GridUnitType.Star);
-            editor.EditorSplitter.Visibility = Visibility.Visible;
-            editor.PreviewToolbarBorder.Visibility = Visibility.Visible;
-            editor.PreviewWidth = editor._previewWidthBeforeReadingMode;
             editor.DisposeIntegratedMode();
+            editor.IntegratedModePanel.Visibility = Visibility.Collapsed;
         }
     }
 
     private void InitializeIntegratedMode()
     {
-        if (_integratedSyncService is not null)
+        if (_integratedRenderController is not null)
             return;
 
-        IntegratedSource.Text = Markdown;
-        _integratedSyncService = new IntegratedPreviewSyncService(
+        _integratedRenderController = new PreviewRenderController(
             IntegratedPreviewViewer,
-            IntegratedSource,
             () => Markdown,
             () => Theme,
             GetDocumentBaseDirectory,
-            SyncIntegratedCaretToPreview,
-            SyncIntegratedPreviewToCaret,
-            OnIntegratedRendered);
+            viewportController: null,
+            args => OnIntegratedRendered(args));
+
+        _integratedBlockEditor = new IntegratedBlockEditor(
+            IntegratedPreviewViewer,
+            IntegratedEditorLayer,
+            () => Theme,
+            () => Markdown,
+            OnIntegratedBlockCommit);
+
+        _integratedRenderController.RenderNow();
+        IntegratedPreviewViewer.Focus();
     }
 
     private void DisposeIntegratedMode()
     {
-        _integratedSyncService?.Dispose();
-        _integratedSyncService = null;
+        _integratedBlockEditor?.Dispose();
+        _integratedBlockEditor = null;
+
+        _integratedRenderController?.Dispose();
+        _integratedRenderController = null;
     }
+
+    internal IntegratedBlockEditor? BlockEditorForTest => _integratedBlockEditor;
+
+    internal FlowDocumentScrollViewer IntegratedViewerForTest => IntegratedPreviewViewer;
 
     private void OnLanguageChanged(object? sender, LanguageChangedEventArgs e)
     {
@@ -809,7 +817,7 @@ public partial class MarkdownEditor : UserControl, IDisposable
     {
         IntegratedMode = !IntegratedMode;
         if (IntegratedMode)
-            IntegratedSource.Focus();
+            IntegratedPreviewViewer.Focus();
         else
             EditorTextBox.Focus();
         e.Handled = true;
@@ -825,111 +833,15 @@ public partial class MarkdownEditor : UserControl, IDisposable
 
     #region Integrated Mode Handlers
 
-    private void OnIntegratedSourceTextChanged(object sender, TextChangedEventArgs e)
+    private void OnIntegratedBlockCommit(string updatedMarkdown)
     {
-        if (_integratedSyncService is null) return;
-        Markdown = IntegratedSource.Text;
-        _integratedSyncService.OnTextChanged();
-    }
-
-    private void OnIntegratedSourceSelectionChanged(object sender, RoutedEventArgs e)
-    {
-        if (_integratedSyncService is null) return;
-        _integratedSyncService.SyncCaretToPreview();
-    }
-
-    private void OnIntegratedSourceLostFocus(object sender, KeyboardFocusChangedEventArgs e)
-    {
-        if (_integratedSyncService is null) return;
-        _integratedSyncService.OnLostFocus();
-    }
-
-    private void OnIntegratedSourceGotFocus(object sender, KeyboardFocusChangedEventArgs e)
-    {
-        if (_integratedSyncService is null) return;
-        _integratedSyncService.OnGotFocus();
-    }
-
-    private void OnIntegratedSourceMouseDown(object sender, MouseButtonEventArgs e)
-    {
-        if (_integratedSyncService is null) return;
-        _integratedSyncService.OnMouseDown();
-    }
-
-    private void OnIntegratedSourcePreviewMouseWheel(object sender, MouseWheelEventArgs e)
-    {
-        if (_integratedSyncService is null) return;
-        _integratedSyncService.OnMouseWheel(e.Delta);
-    }
-
-    private void SyncIntegratedCaretToPreview(int line)
-    {
-        if (_isSyncingScroll) return;
-        _isSyncingScroll = true;
-        try
-        {
-            var block = FindBlockForLine(IntegratedPreviewViewer.Document, line);
-            if (block is null) return;
-            block.BringIntoView();
-        }
-        finally
-        {
-            _isSyncingScroll = false;
-        }
-    }
-
-    private void SyncIntegratedPreviewToCaret()
-    {
-        if (_isSyncingScroll) return;
-        _isSyncingScroll = true;
-        try
-        {
-            var line = SourceLineMapper.GetSourceLine(IntegratedSource, IntegratedSource.CaretIndex);
-            var block = FindBlockForLine(IntegratedPreviewViewer.Document, line);
-            if (block is not null)
-                block.BringIntoView();
-        }
-        finally
-        {
-            _isSyncingScroll = false;
-        }
-    }
-
-    private static WpfBlock? FindBlockForLine(FlowDocument? document, int line)
-    {
-        if (document is null) return null;
-        WpfBlock? firstFollowingBlock = null;
-        WpfBlock? lastMappedBlock = null;
-        var hasMetadata = false;
-
-        foreach (var block in document.Blocks)
-        {
-            if (!RenderedBlockMetadata.TryGet(block, out var info))
-                continue;
-
-            hasMetadata = true;
-            lastMappedBlock = block;
-
-            if (info.SourceStartLine <= line && line <= info.SourceEndLine)
-                return block;
-
-            if (info.SourceStartLine > line && firstFollowingBlock is null)
-                firstFollowingBlock = block;
-        }
-
-        return hasMetadata ? firstFollowingBlock ?? lastMappedBlock : null;
+        Markdown = updatedMarkdown;
+        _integratedRenderController?.RenderNow();
     }
 
     private void OnIntegratedRendered(PreviewRenderedEventArgs args)
     {
-        // Preserve caret position after render
-        if (IntegratedSource.IsLoaded)
-        {
-            var line = SourceLineMapper.GetSourceLine(IntegratedSource, IntegratedSource.CaretIndex);
-            var block = FindBlockForLine(IntegratedPreviewViewer.Document, line);
-            if (block is not null)
-                block.BringIntoView();
-        }
+        _integratedBlockEditor?.OnDocumentRendered();
     }
 
     #endregion
